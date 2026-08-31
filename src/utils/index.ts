@@ -18,42 +18,13 @@ export function createDefaultPad(index: number, bankId: BankId = 'A'): PadConfig
   const col = index % GRID_SIZE;
   const shortcut = DEFAULT_KEYBOARD_MAP[row]?.[col] ?? '';
 
-  let name = `Pad ${index + 1}`;
-  let assetId: string | null = null;
-  let loop = false;
+  const padNumber = String(index + 1).padStart(2, '0');
+  const name = `PAD ${padNumber}`;
+  const assetId: string | null = null;
+  const loop = false;
 
-  if (bankId === 'A') {
-    const defaultPads = [
-      { name: 'Vocal 1', shortcut: 'A', assetId: 'default-synth-vocal1' },
-      { name: 'Vocal 2', shortcut: 'S', assetId: 'default-synth-vocal2' },
-      { name: 'Vocal 3', shortcut: 'D', assetId: 'default-synth-vocal3' },
-      { name: 'Vocal 4', shortcut: 'F', assetId: 'default-synth-vocal4' },
-      
-      { name: 'FAAAATHER', shortcut: 'G', assetId: 'default-synth-father' },
-      { name: 'Bad To Us', shortcut: 'H', assetId: 'default-synth-badtous' },
-      { name: 'See This Coat', shortcut: 'J', assetId: 'default-synth-seethiscoat' },
-      { name: 'Lord (Fast)', shortcut: 'K', assetId: 'default-synth-lordfast' },
-      
-      { name: 'Beat Loop', shortcut: 'Z', assetId: 'default-synth-beatloop', loop: true },
-      { name: 'Intro', shortcut: 'X', assetId: 'default-synth-intro' },
-      { name: 'Guitar', shortcut: 'C', assetId: 'default-synth-guitar' },
-      { name: 'Lord (Long)', shortcut: 'V', assetId: 'default-synth-lordlong' },
-      
-      { name: '_', shortcut: 'B', assetId: null },
-      { name: 'Stop', shortcut: 'N', assetId: 'default-synth-stop' },
-      { name: 'Camera click on/off', shortcut: 'M', assetId: 'default-synth-cameraclick' },
-      { name: 'Click for Info', shortcut: 'G', assetId: 'default-synth-info' },
-    ];
-
-    const def = defaultPads[index];
-    if (def) {
-      name = def.name;
-      assetId = def.assetId;
-      if (def.loop) loop = true;
-    }
-  }
-
-  const shortcutKey = bankId === 'A' ? (index === 15 ? ' ' : (DEFAULT_KEYBOARD_MAP[row]?.[col] ?? '')) : shortcut;
+  const defaultKeys = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', ' '];
+  const shortcutKey = bankId === 'A' ? (defaultKeys[index] ?? shortcut) : shortcut;
 
   return {
     id: generateId(),
@@ -64,7 +35,7 @@ export function createDefaultPad(index: number, bankId: BankId = 'A'): PadConfig
     exclusive: false,
     muted: false,
     solo: false,
-    shortcut: bankId === 'A' && index === 15 ? ' ' : (bankId === 'A' ? (['A','S','D','F','G','H','J','K','Z','X','C','V','B','N','M',' '][index]) : shortcutKey),
+    shortcut: shortcutKey,
     assetId,
   };
 }

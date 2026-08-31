@@ -44,7 +44,8 @@ export const Pad = memo(function Pad({
     [pad.id, onAssignAsset],
   );
 
-  const displayName = pad.name === `Pad ${index + 1}` && assetName ? assetName : pad.name;
+  const padDefaultName = `PAD ${String(index + 1).padStart(2, '0')}`;
+  const displayName = pad.assetId && assetName ? assetName : (pad.name || padDefaultName);
   const shortcutDisplay = pad.shortcut === ' ' ? 'SPACE' : (pad.shortcut || '');
 
   // Authentic MPC pad 3D shadows and glowing states
@@ -59,7 +60,7 @@ export const Pad = memo(function Pad({
       type="button"
       whileTap={{ scale: 0.96, y: 2 }}
       className={cn(
-        'group relative w-full aspect-square rounded-xl overflow-hidden cursor-pointer select-none transition-all duration-75 flex flex-col justify-between p-2 sm:p-2.5',
+        'group relative w-full aspect-square rounded-xl overflow-hidden cursor-pointer select-none transition-all duration-75 flex flex-col justify-between p-1.5 sm:p-2.5 touch-manipulation',
         'border-2 bg-gradient-to-b from-[#343438] via-[#242427] to-[#18181a]',
         isPlaying
           ? 'border-[#ff4500] from-[#452220] via-[#2d1817] to-[#201010]'

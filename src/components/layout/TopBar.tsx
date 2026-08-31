@@ -142,7 +142,7 @@ export function TopBar() {
         </div>
 
         {/* Twin Vertical VU Meters */}
-        <div className="flex gap-1 h-12 bg-black/40 p-1.5 rounded border border-white/5">
+        <div className="flex gap-1 h-9 sm:h-12 bg-black/40 p-1 sm:p-1.5 rounded border border-white/5">
           {[0, 1].map((ch) => (
             <div key={ch} className="w-1.5 h-full bg-neutral-900 rounded-sm overflow-hidden flex flex-col justify-end">
               <div
@@ -153,28 +153,28 @@ export function TopBar() {
           ))}
         </div>
 
-        {/* Oscilloscope Canvas */}
-        <div className="w-[300px] md:w-[450px] h-12 bg-black/40 rounded border border-white/5 overflow-hidden relative">
+        {/* Oscilloscope Canvas (Hidden on small mobile screens) */}
+        <div className="hidden md:block w-[240px] lg:w-[450px] h-12 bg-black/40 rounded border border-white/5 overflow-hidden relative">
           <canvas ref={canvasRef} width="450" height="48" className="w-full h-full opacity-90" />
         </div>
       </div>
 
       {/* Center Project Name Editor */}
-      <div className="hidden lg:flex flex-col items-center">
+      <div className="hidden sm:flex flex-col items-center">
         <input
           type="text"
           value={projectName}
           onChange={(e) => setProjectName(e.target.value)}
-          className="bg-transparent text-center text-xs font-mono uppercase tracking-widest border-b border-transparent hover:border-white/10 focus:border-red-500/50 outline-none px-2 py-0.5 max-w-[200px] transition-colors text-neutral-400 focus:text-white"
+          className="bg-transparent text-center text-xs font-mono uppercase tracking-widest border-b border-transparent hover:border-white/10 focus:border-red-500/50 outline-none px-2 py-0.5 max-w-[160px] lg:max-w-[200px] transition-colors text-neutral-400 focus:text-white"
           aria-label="Project name"
         />
-        <span className="text-[9px] text-neutral-600 font-mono tracking-wider mt-0.5">MPC PRODUCTION STUDIO</span>
+        <span className="text-[8px] sm:text-[9px] text-neutral-600 font-mono tracking-wider mt-0.5">MPC PRODUCTION STUDIO</span>
       </div>
 
       {/* Right: Analog Needle VU Meter & Actions */}
-      <div className="flex items-center gap-6">
-        {/* Analog Needle VU Meter */}
-        <div className="relative w-24 h-14 bg-neutral-950 border border-neutral-800 rounded-lg overflow-hidden flex flex-col items-center justify-end p-1 shadow-inner">
+      <div className="flex items-center gap-2 sm:gap-6">
+        {/* Analog Needle VU Meter (Hidden on mobile) */}
+        <div className="hidden sm:flex relative w-20 sm:w-24 h-12 sm:h-14 bg-neutral-950 border border-neutral-800 rounded-lg overflow-hidden flex-col items-center justify-end p-1 shadow-inner">
           {/* Radial Arc scale */}
           <svg width="80" height="40" viewBox="0 0 80 40" className="absolute top-1.5 opacity-60">
             <path
@@ -205,20 +205,20 @@ export function TopBar() {
         {/* Action Controls */}
         <div className="flex items-center gap-1">
           {isSaving && (
-            <span className="text-[10px] font-mono text-neutral-500 flex items-center gap-1.5 mr-2">
+            <span className="text-[10px] font-mono text-neutral-500 hidden sm:flex items-center gap-1.5 mr-1">
               <Loader2 size={10} className="animate-spin text-red-500" />
               AUTO
             </span>
           )}
-          <Button variant="ghost" size="sm" onClick={() => void saveProject()} className="hover:text-red-500 text-neutral-400 font-mono text-xs">
-            <Save size={13} className="mr-1" />
-            SAVE
+          <Button variant="ghost" size="sm" onClick={() => void saveProject()} className="hover:text-red-500 text-neutral-400 font-mono text-xs px-2 py-1">
+            <Save size={13} className="sm:mr-1" />
+            <span className="hidden sm:inline">SAVE</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setLoadModalOpen(true)} className="hover:text-red-500 text-neutral-400 font-mono text-xs">
-            <FolderOpen size={13} className="mr-1" />
-            LOAD
+          <Button variant="ghost" size="sm" onClick={() => setLoadModalOpen(true)} className="hover:text-red-500 text-neutral-400 font-mono text-xs px-2 py-1">
+            <FolderOpen size={13} className="sm:mr-1" />
+            <span className="hidden sm:inline">LOAD</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="hover:text-red-500 text-neutral-400">
+          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="hover:text-red-500 text-neutral-400 px-2 py-1">
             <Settings size={14} />
           </Button>
         </div>

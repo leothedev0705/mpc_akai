@@ -56,6 +56,10 @@ export function MpcConsole() {
     () => bank.pads.find((p) => p.id === selectedPadId) || bank.pads[0],
     [bank.pads, selectedPadId]
   );
+
+  const activePadIndex = useMemo(() => {
+    return bank.pads.findIndex((p) => p.id === activePad?.id);
+  }, [bank.pads, activePad]);
   
   // Find currently playing pad names
   const playingPadName = useMemo(() => {
@@ -63,10 +67,18 @@ export function MpcConsole() {
     const playingId = Array.from(playingPadIds)[0];
     for (const b of project.banks) {
       const p = b.pads.find((pad) => pad.id === playingId);
-      if (p) return p.name;
+      if (p) return p.assetId ? p.name : ('PAD ' + String(b.pads.indexOf(p) + 1).padStart(2, '0'));
     }
     return null;
   }, [playingPadIds, project.banks]);
+
+  const activePadDisplayName = useMemo(() => {
+    if (!activePad) return 'PAD 01';
+    if (activePad.assetId && activePad.name && !activePad.name.toLowerCase().startsWith('pad ')) {
+      return activePad.name;
+    }
+    return 'PAD ' + String(activePadIndex >= 0 ? activePadIndex + 1 : 1).padStart(2, '0');
+  }, [activePad, activePadIndex]);
 
   // Selected Pad Sequencer steps
   const activePadSeq = useMemo(() => {
@@ -99,6 +111,7 @@ export function MpcConsole() {
   const handleFunctionKey = (action: string) => {
     switch (action) {
       case 'MAIN SCREEN':
+      case 'MAIN':
         setMpcMode('MAIN');
         break;
       case 'DRUM':
@@ -299,9 +312,9 @@ export function MpcConsole() {
   }, [mpcMode, isPlayingSequencer, swing, bpm]);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 bg-[#101012] overflow-y-auto select-none">
+    <div className="w-full flex-1 flex flex-col items-center justify-center p-2 sm:p-6 bg-[#101012] overflow-y-auto select-none">
       {/* Outer MPC 2000XL Chassis */}
-      <div className="relative w-full max-w-[1100px] bg-gradient-to-b from-[#38383c] via-[#2a2a2d] to-[#202022] rounded-2xl border-4 border-[#141416] shadow-[0_30px_70px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.12)] p-6 sm:p-8 flex flex-col lg:flex-row gap-6 sm:gap-8">
+      <div className="relative w-full max-w-[1100px] bg-gradient-to-b from-[#38383c] via-[#2a2a2d] to-[#202022] rounded-2xl border-4 border-[#141416] shadow-[0_30px_70px_rgba(0,0,0,0.9),inset_0_2px_4px_rgba(255,255,255,0.12)] p-3.5 sm:p-8 flex flex-col lg:flex-row gap-5 sm:gap-8">
         
         {/* Corner Chassis Screws */}
         <div className="absolute top-2.5 left-2.5 w-3 h-3 rounded-full bg-neutral-600 border border-neutral-800 flex items-center justify-center shadow-inner text-[6px] font-bold text-neutral-900">+</div>
@@ -313,42 +326,42 @@ export function MpcConsole() {
         <div className="flex-1 flex flex-col justify-between min-w-0">
           
           {/* LCD Screen Container */}
-          <div className="relative mb-5">
+          <div className="relative mb-4 sm:mb-5">
             {/* Vintage AKAI Brand stamp */}
-            <div className="flex items-baseline justify-between mb-2 text-neutral-400 font-mono tracking-widest text-[10px] font-bold">
+            <div className="flex items-baseline justify-between mb-1.5 sm:mb-2 text-neutral-400 font-mono tracking-widest text-[9px] sm:text-[10px] font-bold">
               <div>
-                <span className="text-sm font-extrabold text-neutral-100">AKAI</span> professional
+                <span className="text-xs sm:text-sm font-extrabold text-neutral-100">AKAI</span> professional
               </div>
-              <span className="text-[9px] text-red-500 font-mono uppercase tracking-wider">
-                {is16Levels ? '• 16-LEVELS CHROMATIC ACTIVE •' : (isPlayingSequencer ? '• SEQUENCER RUNNING •' : 'STANDBY')}
+              <span className="text-[8px] sm:text-[9px] text-red-500 font-mono uppercase tracking-wider">
+                {is16Levels ? '• 16-LEVELS ACTIVE •' : (isPlayingSequencer ? '• SEQUENCER RUNNING •' : 'STANDBY')}
               </span>
             </div>
 
             {/* Glowing Red Backlit Graphic LCD Display */}
-            <div className="w-full bg-[#2b0202] border-4 border-neutral-950 rounded-xl p-4 font-mono shadow-[0_0_20px_rgba(255,20,20,0.2),inset_0_3px_8px_black] text-[#ff3b3b] min-h-[140px] flex flex-col justify-between">
+            <div className="w-full bg-[#2b0202] border-4 border-neutral-950 rounded-xl p-3 sm:p-4 font-mono shadow-[0_0_20px_rgba(255,20,20,0.2),inset_0_3px_8px_black] text-[#ff3b3b] min-h-[125px] sm:min-h-[140px] flex flex-col justify-between overflow-hidden">
               
               {/* LCD Mode 1: MAIN SCREEN */}
               {mpcMode === 'MAIN' && (
                 <>
-                  <div className="flex justify-between items-center text-xs font-bold border-b border-red-950/80 pb-1">
-                    <span className="truncate">SQ: 01-FATHER STRETCH (4/4)</span>
+                  <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold border-b border-red-950/80 pb-1">
+                    <span className="truncate">SQ: 01-SEQUENCE 01 (4/4)</span>
                     <span className="text-red-400">BPM: {bpm} (SWG {swing}%)</span>
                   </div>
 
-                  <div className="py-2 space-y-1 text-[11px]">
+                  <div className="py-1.5 sm:py-2 space-y-1 text-[10px] sm:text-[11px]">
                     <div className="flex justify-between">
-                      <span className="text-white font-bold">
-                        {playingPadName ? 'PLAYING: "' + playingPadName + '"' : ('PAD: ' + (activePad ? (activePad.name + ' [' + (activePad.shortcut === ' ' ? 'SPACE' : activePad.shortcut) + ']') : 'PAD 01'))}
+                      <span className="text-white font-bold truncate max-w-[240px]">
+                        {playingPadName ? 'PLAY: "' + playingPadName + '"' : ('PAD: ' + activePadDisplayName + ' [' + (activePad?.shortcut === ' ' ? 'SPACE' : (activePad?.shortcut || '')) + ']')}
                       </span>
-                      <span className="text-red-400">BANK: {activeBankId}</span>
+                      <span className="text-red-400 shrink-0">BANK: {activeBankId}</span>
                     </div>
-                    <div className="flex justify-between text-[10px] text-red-300">
+                    <div className="flex justify-between text-[9px] sm:text-[10px] text-red-300">
                       <span>VOL: {Math.round((activePad?.volume ?? 0.8) * 100)}% | PAN: {(activePad?.pan ?? 0) === 0 ? 'C' : (activePad?.pan ?? 0) < 0 ? 'L' + Math.round(Math.abs(activePad?.pan ?? 0)*100) : 'R' + Math.round((activePad?.pan ?? 0)*100)}</span>
                       <span>TUNE: {(activePad?.tune ?? 0) > 0 ? '+' + activePad?.tune + 'st' : (activePad?.tune ?? 0) + 'st'} | CUTOFF: {(activePad?.cutoff ?? 20000) >= 19500 ? 'OPEN' : Math.round(activePad?.cutoff ?? 20000) + 'Hz'}</span>
                     </div>
                   </div>
 
-                  <div className="text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-500 font-bold">
+                  <div className="text-[8px] sm:text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-500 font-bold">
                     <span>16-LEVELS: {is16Levels ? 'ON' : 'OFF'}</span>
                     <span>SLIDER: {sliderTarget}</span>
                     <span>16-BIT / 44.1kHz</span>
@@ -359,22 +372,22 @@ export function MpcConsole() {
               {/* LCD Mode 2: 16-LEVELS MODE */}
               {mpcMode === '16_LEVELS' && (
                 <>
-                  <div className="flex justify-between items-center text-xs font-bold border-b border-red-950/80 pb-1">
-                    <span className="text-amber-400">*** 16-LEVELS CHROMATIC KEYBOARD ***</span>
-                    <span className="text-white">ROOT: 0 st</span>
+                  <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold border-b border-red-950/80 pb-1">
+                    <span className="text-amber-400 truncate">*** 16-LEVELS CHROMATIC ***</span>
+                    <span className="text-white shrink-0">ROOT: 0 st</span>
                   </div>
 
-                  <div className="py-2 text-[11px] space-y-1">
-                    <p className="text-white font-bold truncate">TARGET SAMPLE: "{activePad?.name}"</p>
-                    <p className="text-[10px] text-amber-300 font-mono">
-                      Pad 01 (-12st) ──► Pad 08 (0st Root) ──► Pad 16 (+12st Octave)
+                  <div className="py-1.5 sm:py-2 text-[10px] sm:text-[11px] space-y-0.5 sm:space-y-1">
+                    <p className="text-white font-bold truncate">TARGET: "{activePadDisplayName}"</p>
+                    <p className="text-[9px] sm:text-[10px] text-amber-300 font-mono">
+                      Pad 01 (-12st) ──► Pad 08 (0st) ──► Pad 16 (+12st)
                     </p>
-                    <p className="text-[9px] text-red-400 italic">Hit any pad to play melody like a keyboard synthesizer!</p>
+                    <p className="text-[8px] sm:text-[9px] text-red-400 italic">Hit any pad to play melodies!</p>
                   </div>
 
-                  <div className="text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
-                    <span>PRESS [F1] OR [SHIFT] TO EXIT</span>
-                    <span>CHROMATIC 2-OCTAVE SPREAD</span>
+                  <div className="text-[8px] sm:text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
+                    <span>PRESS [F1] / [SHIFT] TO EXIT</span>
+                    <span>2-OCTAVE SPREAD</span>
                   </div>
                 </>
               )}
@@ -382,13 +395,13 @@ export function MpcConsole() {
               {/* LCD Mode 3: PROGRAM MIXER */}
               {mpcMode === 'MIXER' && (
                 <>
-                  <div className="flex justify-between items-center text-xs font-bold border-b border-red-950/80 pb-1">
-                    <span className="text-white">PROGRAM PAD MIXER (BANK {activeBankId})</span>
-                    <span className="text-red-400">PAD: {activePad?.name}</span>
+                  <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold border-b border-red-950/80 pb-1">
+                    <span className="text-white truncate">PAD MIXER (BANK {activeBankId})</span>
+                    <span className="text-red-400 truncate max-w-[120px]">{activePadDisplayName}</span>
                   </div>
 
                   {/* 16-channel graphic meter bars */}
-                  <div className="grid grid-cols-16 gap-1 items-end h-10 py-1">
+                  <div className="grid grid-cols-16 gap-0.5 sm:gap-1 items-end h-8 sm:h-10 py-1">
                     {bank.pads.map((p, idx) => (
                       <div key={p.id} className="flex flex-col items-center h-full justify-end">
                         <div
@@ -399,13 +412,13 @@ export function MpcConsole() {
                           )}
                           style={{ height: Math.round(p.volume * 100) + '%' }}
                         />
-                        <span className="text-[6px] text-red-400 mt-0.5">{idx + 1}</span>
+                        <span className="text-[5px] sm:text-[6px] text-red-400 mt-0.5">{idx + 1}</span>
                       </div>
                     ))}
                   </div>
 
-                  <div className="text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
-                    <span>ACTIVE: {activePad?.name} (VOL {Math.round((activePad?.volume ?? 0.8)*100)}%)</span>
+                  <div className="text-[8px] sm:text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
+                    <span className="truncate">ACTIVE: {activePadDisplayName} ({Math.round((activePad?.volume ?? 0.8)*100)}%)</span>
                     <span>PAN: {(activePad?.pan ?? 0) === 0 ? 'CENTER' : (activePad?.pan ?? 0) < 0 ? 'L' + Math.round(Math.abs(activePad?.pan ?? 0)*100) : 'R' + Math.round((activePad?.pan ?? 0)*100)}</span>
                   </div>
                 </>
@@ -414,15 +427,15 @@ export function MpcConsole() {
               {/* LCD Mode 4: 16-STEP SEQUENCER */}
               {mpcMode === 'STEP_EDIT' && (
                 <>
-                  <div className="flex justify-between items-center text-xs font-bold border-b border-red-950/80 pb-1">
-                    <span className="text-white truncate">16-STEP SEQUENCER: "{activePad?.name}"</span>
-                    <span className={cn("text-xs font-bold", isPlayingSequencer ? "text-emerald-400 animate-pulse" : "text-red-400")}>
-                      {isPlayingSequencer ? 'PLAYING (STEP ' + (currentStep + 1) + ')' : 'STOPPED'}
+                  <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold border-b border-red-950/80 pb-1">
+                    <span className="text-white truncate max-w-[180px]">16-STEP: "{activePadDisplayName}"</span>
+                    <span className={cn("text-[10px] sm:text-xs font-bold shrink-0", isPlayingSequencer ? "text-emerald-400 animate-pulse" : "text-red-400")}>
+                      {isPlayingSequencer ? 'STEP ' + (currentStep + 1) : 'STOPPED'}
                     </span>
                   </div>
 
                   {/* 16 Step visual blocks */}
-                  <div className="grid grid-cols-16 gap-1 py-2">
+                  <div className="grid grid-cols-16 gap-0.5 sm:gap-1 py-1.5 sm:py-2">
                     {Array.from({ length: 16 }).map((_, stepIdx) => {
                       const isTrig = activePadSeq[stepIdx];
                       const isPlayhead = currentStep === stepIdx;
@@ -431,21 +444,21 @@ export function MpcConsole() {
                           key={stepIdx}
                           onClick={() => activePad && toggleStep(activePad.id, stepIdx)}
                           className={cn(
-                            "h-7 rounded border flex flex-col items-center justify-between p-0.5 cursor-pointer transition-all",
+                            "h-6 sm:h-7 rounded border flex flex-col items-center justify-between p-0.5 cursor-pointer transition-all touch-manipulation",
                             isTrig ? "bg-red-500 border-red-400 text-white font-bold" : "bg-red-950/40 border-red-900/60 text-red-600",
                             isPlayhead && "ring-2 ring-white scale-105 bg-white text-black font-extrabold shadow-[0_0_8px_white]"
                           )}
                         >
-                          <span className="text-[6px]">{stepIdx + 1}</span>
-                          <span className="text-[7px]">{isTrig ? '●' : '·'}</span>
+                          <span className="text-[5px] sm:text-[6px]">{stepIdx + 1}</span>
+                          <span className="text-[6px] sm:text-[7px]">{isTrig ? '●' : '·'}</span>
                         </button>
                       );
                     })}
                   </div>
 
-                  <div className="text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
-                    <span>CLICK STEPS TO TOGGLE BEAT</span>
-                    <span>TEMPO: {bpm} BPM | SWING: {swing}%</span>
+                  <div className="text-[8px] sm:text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
+                    <span>TOGGLE STEPS</span>
+                    <span>{bpm} BPM | SWG {swing}%</span>
                   </div>
                 </>
               )}
@@ -453,20 +466,20 @@ export function MpcConsole() {
               {/* LCD Mode 5: SAMPLING RECORDER */}
               {mpcMode === 'SAMPLER' && (
                 <>
-                  <div className="flex justify-between items-center text-xs font-bold border-b border-red-950/80 pb-1">
-                    <span className="text-white">DIRECT MIC & STEREO SAMPLING</span>
+                  <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold border-b border-red-950/80 pb-1">
+                    <span className="text-white">DIRECT SAMPLING</span>
                     <span className="text-amber-400">48kHz / 24-BIT</span>
                   </div>
 
-                  <div className="py-2 text-[11px] space-y-1">
-                    <p className="text-white">INPUT SOURCE: DEFAULT AUDIO INPUT (MIC / LINE)</p>
-                    <p className="text-red-300 text-[10px]">TARGET ASSIGNMENT: BANK {activeBankId} • {activePad?.name}</p>
-                    <p className="text-[9px] text-red-500">Press [F2: REC] or Transport [REC] to begin capture</p>
+                  <div className="py-1.5 sm:py-2 text-[10px] sm:text-[11px] space-y-0.5 sm:space-y-1">
+                    <p className="text-white">INPUT: DEFAULT MIC / LINE</p>
+                    <p className="text-red-300 text-[9px] sm:text-[10px]">ASSIGN: BANK {activeBankId} • {activePadDisplayName}</p>
+                    <p className="text-[8px] sm:text-[9px] text-red-500">Press [REC] to capture audio</p>
                   </div>
 
-                  <div className="text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
-                    <span>MEMORY: 32MB EXPANDED</span>
-                    <span>AUTO-NORMALIZE: ON</span>
+                  <div className="text-[8px] sm:text-[9px] flex justify-between pt-1 border-t border-red-950/80 text-red-400 font-bold">
+                    <span>32MB EXPANDED</span>
+                    <span>AUTO-NORM: ON</span>
                   </div>
                 </>
               )}
@@ -474,7 +487,7 @@ export function MpcConsole() {
             </div>
 
             {/* F1 - F6 Soft-Buttons under LCD */}
-            <div className="grid grid-cols-6 gap-2 mt-2 px-1">
+            <div className="grid grid-cols-6 gap-1 sm:gap-2 mt-2 px-0.5 sm:px-1">
               {softLabels.map((lbl, idx) => {
                 const num = idx + 1;
                 return (
@@ -482,11 +495,11 @@ export function MpcConsole() {
                     key={num}
                     onClick={() => handleFButtonClick(num)}
                     className={cn(
-                      "h-6 rounded bg-gradient-to-b from-[#444448] to-[#2c2c2f] border border-neutral-950 text-[9px] font-bold text-neutral-300 shadow-sm active:translate-y-[1px] active:shadow-inner hover:text-white transition-all duration-75 cursor-pointer flex flex-col items-center justify-center",
+                      "h-6 sm:h-6 rounded bg-gradient-to-b from-[#444448] to-[#2c2c2f] border border-neutral-950 text-[8px] font-bold text-neutral-300 shadow-sm active:translate-y-[1px] active:shadow-inner hover:text-white transition-all duration-75 cursor-pointer flex flex-col items-center justify-center touch-manipulation",
                       activeFButton === num && "from-[#ff4500] to-[#b33000] text-white border-red-950 shadow-[0_0_8px_rgba(255,69,0,0.5)]"
                     )}
                   >
-                    <span className="text-[8px] tracking-tight">{lbl}</span>
+                    <span className="text-[7px] sm:text-[8px] tracking-tight">{lbl}</span>
                   </button>
                 );
               })}
@@ -494,10 +507,10 @@ export function MpcConsole() {
           </div>
 
           {/* Controls Cluster: Numeric Keypad, Note Variation Slider, Jog Dial */}
-          <div className="grid grid-cols-12 gap-3.5 flex-1 items-start mt-1">
+          <div className="grid grid-cols-12 gap-2.5 sm:gap-3.5 flex-1 items-start mt-1">
             
             {/* Columns 1-4: Function keys grid (1-9, SHIFT, 0, ENT) */}
-            <div className="col-span-4 grid grid-cols-3 gap-1.5 bg-black/20 p-2 rounded-xl border border-white/5 shadow-inner">
+            <div className="col-span-12 sm:col-span-4 grid grid-cols-3 gap-1 sm:gap-1.5 bg-black/20 p-1.5 sm:p-2 rounded-xl border border-white/5 shadow-inner">
               {[
                 { label: '7', sub: 'OTHER' }, { label: '8', sub: 'MIDI' }, { label: '9', sub: 'SYNC' },
                 { label: '4', sub: 'SAMPLING' }, { label: '5', sub: 'STEP EDIT' }, { label: '6', sub: 'MIXER' },
@@ -508,26 +521,26 @@ export function MpcConsole() {
                   key={idx}
                   onClick={() => handleFunctionKey(btn.sub)}
                   className={cn(
-                    "flex flex-col items-center justify-center p-1 min-h-[38px] rounded border border-neutral-950 bg-gradient-to-b from-[#3a3a3e] to-[#252528] active:translate-y-[1px] shadow-sm hover:from-[#444448] hover:to-[#2e2e32] cursor-pointer transition-all",
+                    "flex flex-col items-center justify-center p-1 min-h-[34px] sm:min-h-[38px] rounded border border-neutral-950 bg-gradient-to-b from-[#3a3a3e] to-[#252528] active:translate-y-[1px] shadow-sm hover:from-[#444448] hover:to-[#2e2e32] cursor-pointer transition-all touch-manipulation",
                     btn.isSpecial && (is16Levels ? "from-amber-600 to-amber-800 text-white border-amber-900 ring-1 ring-amber-400" : "from-[#ff6200]/20 to-[#ff6200]/5 border-orange-950/50")
                   )}
                 >
-                  <span className="text-[10px] font-bold text-neutral-200">{btn.label}</span>
-                  <span className="text-[6px] font-mono text-neutral-400 uppercase tracking-tight">{btn.sub}</span>
+                  <span className="text-[9px] sm:text-[10px] font-bold text-neutral-200">{btn.label}</span>
+                  <span className="text-[5.5px] sm:text-[6px] font-mono text-neutral-400 uppercase tracking-tight">{btn.sub}</span>
                 </button>
               ))}
             </div>
 
             {/* Column 5: Note Variation Slider (Volume / Tune / Filter) */}
-            <div className="col-span-3 flex flex-col items-center justify-between h-full py-1.5 px-2 bg-black/20 rounded-xl border border-white/5 shadow-inner min-h-[175px]">
+            <div className="col-span-5 sm:col-span-3 flex flex-col items-center justify-between h-full py-1 px-1.5 sm:py-1.5 sm:px-2 bg-black/20 rounded-xl border border-white/5 shadow-inner min-h-[150px] sm:min-h-[175px]">
               {/* Slider Target Selector Buttons */}
-              <div className="flex gap-1 w-full justify-center">
+              <div className="flex gap-0.5 sm:gap-1 w-full justify-center">
                 {(['VOLUME', 'TUNE', 'FILTER'] as const).map((t) => (
                   <button
                     key={t}
                     onClick={() => setSliderTarget(t)}
                     className={cn(
-                      "text-[6px] font-mono font-bold px-1 py-0.5 rounded cursor-pointer transition-all",
+                      "text-[5.5px] sm:text-[6px] font-mono font-bold px-1 py-0.5 rounded cursor-pointer transition-all touch-manipulation",
                       sliderTarget === t ? "bg-red-600 text-white" : "bg-neutral-800 text-neutral-400 hover:text-white"
                     )}
                   >
@@ -536,9 +549,9 @@ export function MpcConsole() {
                 ))}
               </div>
               
-              <div className="relative flex-1 w-full flex items-center justify-center py-2">
+              <div className="relative flex-1 w-full flex items-center justify-center py-2 touch-none">
                 {/* Scale markings */}
-                <div className="absolute left-2 top-2 bottom-2 flex flex-col justify-between text-[6px] font-mono text-neutral-600">
+                <div className="absolute left-1 sm:left-2 top-2 bottom-2 flex flex-col justify-between text-[5px] sm:text-[6px] font-mono text-neutral-600">
                   <span>MAX</span>
                   <span>- 0</span>
                   <span>- 12</span>
@@ -550,7 +563,7 @@ export function MpcConsole() {
                 <div className="h-full w-[4px] bg-[#121214] rounded-full border border-neutral-800 relative">
                   {/* Slider Knob */}
                   <div
-                    className="absolute left-[-9px] w-5 h-8 bg-gradient-to-b from-[#ececed] via-[#9da2a6] to-[#6a6d70] border border-neutral-800 rounded-sm cursor-pointer shadow-md hover:brightness-110 active:brightness-95 flex flex-col items-center justify-center gap-0.5"
+                    className="absolute left-[-9px] w-5 h-8 bg-gradient-to-b from-[#ececed] via-[#9da2a6] to-[#6a6d70] border border-neutral-800 rounded-sm cursor-pointer shadow-md hover:brightness-110 active:brightness-95 flex flex-col items-center justify-center gap-0.5 touch-none"
                     style={{ bottom: (sliderCurrentValue * 80) + '%' }}
                     onPointerDown={(e) => {
                       const track = e.currentTarget.parentElement;
@@ -571,86 +584,85 @@ export function MpcConsole() {
                       window.addEventListener('pointerup', upHandler);
                     }}
                   >
-                    {/* Horizontal grip notch */}
                     <div className="w-full h-[2px] bg-neutral-900 opacity-60" />
                   </div>
                 </div>
               </div>
 
-              <span className="text-[7px] text-neutral-400 font-mono tracking-widest uppercase">
+              <span className="text-[6px] sm:text-[7px] text-neutral-400 font-mono tracking-widest uppercase">
                 {sliderTarget}
               </span>
             </div>
 
             {/* Columns 6-12: Big Jog Wheel & D-Pad Section */}
-            <div className="col-span-5 flex flex-col items-center justify-center">
+            <div className="col-span-7 sm:col-span-5 flex flex-col items-center justify-center">
               {/* OPEN WINDOW / PREV STEP */}
-              <div className="flex gap-3 mb-2.5">
+              <div className="flex gap-2 sm:gap-3 mb-2">
                 <button
                   onClick={() => setSettingsOpen(true)}
-                  className="px-2.5 py-1 rounded bg-red-600 border border-red-800 active:translate-y-[1px] shadow-sm hover:brightness-110 flex flex-col items-center cursor-pointer"
+                  className="px-2 py-1 rounded bg-red-600 border border-red-800 active:translate-y-[1px] shadow-sm hover:brightness-110 flex flex-col items-center cursor-pointer touch-manipulation"
                 >
-                  <span className="text-[8px] font-bold text-white">OPEN WINDOW</span>
+                  <span className="text-[7px] sm:text-[8px] font-bold text-white">OPEN WINDOW</span>
                 </button>
                 <button
                   onClick={() => handleDPadMove('left')}
-                  className="px-2.5 py-1 rounded bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 active:translate-y-[1px] shadow-sm hover:brightness-110 flex flex-col items-center cursor-pointer"
+                  className="px-2 py-1 rounded bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 active:translate-y-[1px] shadow-sm hover:brightness-110 flex flex-col items-center cursor-pointer touch-manipulation"
                 >
-                  <span className="text-[8px] font-bold text-neutral-300">PREV STEP</span>
+                  <span className="text-[7px] sm:text-[8px] font-bold text-neutral-300">PREV STEP</span>
                 </button>
               </div>
 
               {/* Rotary Jog Dial */}
               <div
                 ref={jogRef}
-                className="relative w-26 h-26 rounded-full bg-gradient-to-b from-[#1b1b1c] via-[#2f2f32] to-[#121213] border-4 border-neutral-900 shadow-[0_6px_16px_rgba(0,0,0,0.6),inset_0_2px_4px_rgba(255,255,255,0.1)] flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+                className="relative w-20 h-20 sm:w-26 sm:h-26 rounded-full bg-gradient-to-b from-[#1b1b1c] via-[#2f2f32] to-[#121213] border-4 border-neutral-900 shadow-[0_6px_16px_rgba(0,0,0,0.6),inset_0_2px_4px_rgba(255,255,255,0.1)] flex items-center justify-center cursor-grab active:cursor-grabbing select-none touch-none"
                 style={{ transform: 'rotate(' + jogRotation + 'deg)' }}
                 onPointerDown={handleJogPointerDown}
                 onPointerMove={handleJogPointerMove}
                 onPointerUp={handleJogPointerUp}
               >
                 {/* Finger Indent Pit */}
-                <div className="absolute top-2.5 w-4.5 h-4.5 rounded-full bg-[#151516] border border-neutral-800 shadow-inner flex items-center justify-center">
-                  <div className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                <div className="absolute top-2 w-3.5 h-3.5 sm:w-4.5 sm:h-4.5 rounded-full bg-[#151516] border border-neutral-800 shadow-inner flex items-center justify-center">
+                  <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-neutral-900" />
                 </div>
 
                 {/* Center cap */}
-                <div className="w-9 h-9 rounded-full bg-gradient-to-t from-[#252528] to-[#3a3a3e] border border-neutral-800 shadow-md flex items-center justify-center">
-                  <div className="w-3.5 h-3.5 rounded-full bg-neutral-900 opacity-60" />
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-full bg-gradient-to-t from-[#252528] to-[#3a3a3e] border border-neutral-800 shadow-md flex items-center justify-center">
+                  <div className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-full bg-neutral-900 opacity-60" />
                 </div>
               </div>
 
               {/* D-Pad / Locator keys */}
-              <div className="mt-3 flex flex-col items-center gap-1">
+              <div className="mt-2 sm:mt-3 flex flex-col items-center gap-1">
                 <button
                   onClick={() => handleDPadMove('up')}
-                  className="w-7 h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[7px] font-bold"
+                  className="w-6 h-5 sm:w-7 sm:h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[6px] sm:text-[7px] font-bold touch-manipulation"
                 >
                   ▲
                 </button>
-                <div className="flex gap-3">
+                <div className="flex gap-2 sm:gap-3">
                   <button
                     onClick={() => handleDPadMove('left')}
-                    className="w-7 h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[7px] font-bold"
+                    className="w-6 h-5 sm:w-7 sm:h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[6px] sm:text-[7px] font-bold touch-manipulation"
                   >
                     ◀
                   </button>
                   <button
                     onClick={() => handleDPadMove('center')}
-                    className="w-7 h-5.5 flex items-center justify-center cursor-pointer rounded bg-neutral-900 border border-white/5 active:translate-y-[0.5px]"
+                    className="w-6 h-5 sm:w-7 sm:h-5.5 flex items-center justify-center cursor-pointer rounded bg-neutral-900 border border-white/5 active:translate-y-[0.5px] touch-manipulation"
                   >
-                    <span className="text-[6px] font-mono text-neutral-400 uppercase font-bold">CRSR</span>
+                    <span className="text-[5px] sm:text-[6px] font-mono text-neutral-400 uppercase font-bold">CRSR</span>
                   </button>
                   <button
                     onClick={() => handleDPadMove('right')}
-                    className="w-7 h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[7px] font-bold"
+                    className="w-6 h-5 sm:w-7 sm:h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[6px] sm:text-[7px] font-bold touch-manipulation"
                   >
                     ▶
                   </button>
                 </div>
                 <button
                   onClick={() => handleDPadMove('down')}
-                  className="w-7 h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[7px] font-bold"
+                  className="w-6 h-5 sm:w-7 sm:h-5.5 bg-gradient-to-b from-[#3a3a3e] to-[#252528] border border-neutral-950 rounded flex items-center justify-center active:translate-y-[0.5px] cursor-pointer hover:text-white text-neutral-300 text-[6px] sm:text-[7px] font-bold touch-manipulation"
                 >
                   ▼
                 </button>
@@ -660,7 +672,7 @@ export function MpcConsole() {
           </div>
 
           {/* Bottom Left: Transport Keys Panel */}
-          <div className="flex gap-2.5 mt-5 border-t border-white/5 pt-3.5">
+          <div className="flex gap-1.5 sm:gap-2.5 mt-4 sm:mt-5 border-t border-white/5 pt-2.5 sm:pt-3.5">
             {[
               { type: 'rec', label: 'REC', isRed: true, led: false },
               { type: 'overdub', label: 'OVER DUB', isRed: true, led: isOverdubbing },
@@ -672,7 +684,7 @@ export function MpcConsole() {
                 key={btn.type}
                 onClick={() => handleTransportClick(btn.type as any)}
                 className={cn(
-                  "flex-1 h-9 rounded flex flex-col items-center justify-center border border-neutral-950 font-mono text-[9px] font-bold shadow-md active:translate-y-[1px] cursor-pointer transition-all",
+                  "flex-1 h-8 sm:h-9 rounded flex flex-col items-center justify-center border border-neutral-950 font-mono text-[8px] sm:text-[9px] font-bold shadow-md active:translate-y-[1px] cursor-pointer transition-all touch-manipulation",
                   btn.isRed
                     ? "bg-gradient-to-b from-red-600 to-red-800 text-white hover:brightness-110"
                     : "bg-gradient-to-b from-[#3a3a3e] to-[#252528] text-neutral-200 hover:text-white hover:brightness-110"
@@ -694,17 +706,17 @@ export function MpcConsole() {
         </div>
 
         {/* RIGHT PANEL: Pad Bank selection, MPC logo, Volume dials, the Pad Grid */}
-        <div className="w-full lg:w-[500px] shrink-0 flex flex-col justify-between">
+        <div className="w-full lg:w-[480px] xl:w-[500px] shrink-0 flex flex-col justify-between">
           
           {/* Top Panel: logo, dials, pad banks */}
-          <div className="flex items-center justify-between mb-3 border-b border-white/5 pb-3">
+          <div className="flex items-center justify-between mb-2.5 sm:mb-3 border-b border-white/5 pb-2.5 sm:pb-3">
             
             {/* PAD BANK selection buttons */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[7px] text-neutral-400 font-mono tracking-wider">PAD BANK</span>
-              <div className="flex gap-1.5">
+            <div className="flex flex-col gap-0.5 sm:gap-1">
+              <span className="text-[6.5px] sm:text-[7px] text-neutral-400 font-mono tracking-wider">PAD BANK</span>
+              <div className="flex gap-1 sm:gap-1.5">
                 {(['A', 'B', 'C', 'D'] as const).map((bankId) => (
-                  <div key={bankId} className="flex flex-col items-center gap-1">
+                  <div key={bankId} className="flex flex-col items-center gap-0.5 sm:gap-1">
                     {/* Orange LED above the button */}
                     <div
                       className={cn(
@@ -715,7 +727,7 @@ export function MpcConsole() {
                     <button
                       onClick={() => setActiveBank(bankId)}
                       className={cn(
-                        "w-8 h-6 rounded text-[10px] font-bold transition-all border border-neutral-950 flex items-center justify-center active:translate-y-[0.5px] cursor-pointer",
+                        "w-7 h-5.5 sm:w-8 sm:h-6 rounded text-[9px] sm:text-[10px] font-bold transition-all border border-neutral-950 flex items-center justify-center active:translate-y-[0.5px] cursor-pointer touch-manipulation",
                         activeBankId === bankId
                           ? "bg-gradient-to-b from-[#ff8c00] to-[#cc7000] text-white shadow-inner"
                           : "bg-gradient-to-b from-[#3a3a3e] to-[#252528] text-neutral-400 hover:text-white"
@@ -729,17 +741,17 @@ export function MpcConsole() {
             </div>
 
             {/* Dials: REC GAIN, MAIN VOLUME */}
-            <div className="flex gap-4">
+            <div className="flex gap-3 sm:gap-4">
               {[
                 { name: 'REC GAIN', val: 0.4 },
-                { name: 'MAIN VOLUME', val: masterVolume, setVal: setMasterVolume }
+                { name: 'MAIN VOL', val: masterVolume, setVal: setMasterVolume }
               ].map((dial, idx) => (
                 <div key={idx} className="flex flex-col items-center">
-                  <span className="text-[7px] text-neutral-400 font-mono mb-1">{dial.name}</span>
+                  <span className="text-[6.5px] sm:text-[7px] text-neutral-400 font-mono mb-1">{dial.name}</span>
                   
                   {/* Rotary Dial Knob */}
                   <div 
-                    className="relative w-9 h-9 rounded-full bg-gradient-to-b from-[#2e2e30] to-[#121213] border-2 border-neutral-900 shadow-md cursor-ns-resize flex items-center justify-center"
+                    className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-b from-[#2e2e30] to-[#121213] border-2 border-neutral-900 shadow-md cursor-ns-resize flex items-center justify-center touch-none"
                     onPointerDown={(e) => {
                       if (!dial.setVal) return;
                       const startY = e.clientY;
@@ -761,7 +773,7 @@ export function MpcConsole() {
                     }}
                   >
                     <div 
-                      className="w-[2px] h-3.5 bg-neutral-400 rounded-full origin-bottom absolute top-1"
+                      className="w-[2px] h-3 sm:h-3.5 bg-neutral-400 rounded-full origin-bottom absolute top-1"
                       style={{ transform: 'rotate(' + ((dial.val * 270) - 135) + 'deg)' }}
                     />
                   </div>
@@ -771,14 +783,14 @@ export function MpcConsole() {
 
             {/* MPC 2000XL Logo details */}
             <div className="text-right flex flex-col select-none">
-              <span className="text-sm font-extrabold tracking-tighter text-red-500 font-mono">MPC2000XL</span>
-              <span className="text-[6px] text-neutral-400 font-mono uppercase tracking-widest">MIDI PRODUCTION CENTER</span>
+              <span className="text-xs sm:text-sm font-extrabold tracking-tighter text-red-500 font-mono">MPC2000XL</span>
+              <span className="text-[5.5px] sm:text-[6px] text-neutral-400 font-mono uppercase tracking-widest hidden sm:inline">MIDI PRODUCTION CENTER</span>
             </div>
 
           </div>
 
           {/* Center: The Pad Grid */}
-          <div className="bg-[#18181a] border-4 border-neutral-950 p-2 sm:p-3 rounded-xl shadow-[inset_0_4px_12px_rgba(0,0,0,0.85)] relative flex-1 flex items-center justify-center min-h-[440px] w-full aspect-square">
+          <div className="bg-[#18181a] border-4 border-neutral-950 p-1.5 sm:p-3 rounded-xl shadow-[inset_0_4px_12px_rgba(0,0,0,0.85)] relative flex-1 flex items-center justify-center min-h-[320px] sm:min-h-[440px] w-full max-w-[460px] aspect-square mx-auto">
             {/* Accent divider line detail */}
             <div className="absolute inset-y-0 left-[-2px] w-[4px] bg-[#0c0c0d] rounded-full pointer-events-none" />
             <PadGrid />
