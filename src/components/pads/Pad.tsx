@@ -45,7 +45,7 @@ export const Pad = memo(function Pad({
   );
 
   const padDefaultName = `PAD ${String(index + 1).padStart(2, '0')}`;
-  const displayName = pad.assetId && assetName ? assetName : (pad.name || padDefaultName);
+  const displayName = pad.assetId && assetName ? assetName : padDefaultName;
   const shortcutDisplay = pad.shortcut === ' ' ? 'SPACE' : (pad.shortcut || '');
 
   // Authentic MPC pad 3D shadows and glowing states

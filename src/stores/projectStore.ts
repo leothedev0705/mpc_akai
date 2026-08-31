@@ -217,10 +217,25 @@ export const useProjectStore = create<ProjectState>()(
       try {
         const parsed = JSON.parse(stored.projectJson) as Project;
         const defaultProj = createDefaultProject();
+        const assets = get().assets;
+        const assetIdSet = new Set(assets.map((a) => a.id));
+
         const project: Project = {
           ...defaultProj,
           ...parsed,
-          banks: parsed.banks?.length ? parsed.banks : defaultProj.banks,
+          banks: (parsed.banks?.length ? parsed.banks : defaultProj.banks).map((bank) => ({
+            ...bank,
+            pads: bank.pads.map((pad, idx) => {
+              const hasUserAsset = pad.assetId && assetIdSet.has(pad.assetId);
+              const userAsset = hasUserAsset ? assets.find((a) => a.id === pad.assetId) : null;
+              const padNum = String(idx + 1).padStart(2, '0');
+              return {
+                ...pad,
+                name: userAsset ? userAsset.name : `PAD ${padNum}`,
+                assetId: userAsset ? userAsset.id : null,
+              };
+            }),
+          })),
         };
         set({ project, selectedPadId: null, playingPadIds: new Set(), currentStep: 0, isPlayingSequencer: false });
         await get().preloadAssets().catch(() => {});
@@ -266,12 +281,16 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     assignAssetToPad: (padId, assetId) => {
-      get().updatePad(padId, { assetId });
+      const asset = get().assets.find((a) => a.id === assetId);
+      get().updatePad(padId, { assetId, name: asset ? asset.name : undefined });
     },
 
     clearPad: (padId) => {
+      const bank = getActiveBank(get().project);
+      const padIndex = bank.pads.findIndex((p) => p.id === padId);
+      const padNum = String(padIndex >= 0 ? padIndex + 1 : 1).padStart(2, '0');
       get().stopPad(padId);
-      get().updatePad(padId, { assetId: null });
+      get().updatePad(padId, { assetId: null, name: `PAD ${padNum}` });
     },
 
     setMasterVolume: (volume) => {

@@ -61,24 +61,29 @@ export function MpcConsole() {
     return bank.pads.findIndex((p) => p.id === activePad?.id);
   }, [bank.pads, activePad]);
   
+  const assets = useProjectStore((s) => s.assets);
+
   // Find currently playing pad names
   const playingPadName = useMemo(() => {
     if (playingPadIds.size === 0) return null;
     const playingId = Array.from(playingPadIds)[0];
     for (const b of project.banks) {
       const p = b.pads.find((pad) => pad.id === playingId);
-      if (p) return p.assetId ? p.name : ('PAD ' + String(b.pads.indexOf(p) + 1).padStart(2, '0'));
+      if (p) {
+        const userAsset = assets.find((a) => a.id === p.assetId);
+        if (userAsset) return userAsset.name;
+        return 'PAD ' + String(b.pads.indexOf(p) + 1).padStart(2, '0');
+      }
     }
     return null;
-  }, [playingPadIds, project.banks]);
+  }, [playingPadIds, project.banks, assets]);
 
   const activePadDisplayName = useMemo(() => {
     if (!activePad) return 'PAD 01';
-    if (activePad.assetId && activePad.name && !activePad.name.toLowerCase().startsWith('pad ')) {
-      return activePad.name;
-    }
+    const userAsset = assets.find((a) => a.id === activePad.assetId);
+    if (userAsset) return userAsset.name;
     return 'PAD ' + String(activePadIndex >= 0 ? activePadIndex + 1 : 1).padStart(2, '0');
-  }, [activePad, activePadIndex]);
+  }, [activePad, activePadIndex, assets]);
 
   // Selected Pad Sequencer steps
   const activePadSeq = useMemo(() => {

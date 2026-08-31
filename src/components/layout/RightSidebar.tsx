@@ -49,12 +49,12 @@ export function RightSidebar() {
           <div className="space-y-5">
             {/* Name */}
             <div>
-              <label className="text-xs text-muted block mb-1.5">Name</label>
+              <label className="text-xs text-muted block mb-1.5">Pad Name</label>
               <input
                 type="text"
-                value={pad.name}
+                value={pad.assetId && asset ? asset.name : (pad.name || `PAD ${String(bank.pads.findIndex(p => p.id === pad.id) + 1).padStart(2, '0')}`)}
                 onChange={(e) => updatePad(pad.id, { name: e.target.value })}
-                className="w-full bg-surface-2 border border-white/8 rounded-lg px-3 py-2 text-sm outline-none focus:border-accent/40 transition-colors"
+                className="w-full bg-surface-2 border border-white/8 rounded-lg px-3 py-2 text-sm outline-none focus:border-accent/40 transition-colors font-mono"
               />
             </div>
 
