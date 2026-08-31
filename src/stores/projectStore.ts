@@ -423,6 +423,9 @@ export const useProjectStore = create<ProjectState>()(
       set((s) => ({
         project: updatePadInProject(s.project, padId, (pad) => ({ ...pad, ...updates })),
       }));
+      if (typeof updates.volume === 'number') {
+        audioEngine.updatePadVolume(padId, updates.volume * get().project.masterVolume);
+      }
       debouncedSave(get);
     },
 

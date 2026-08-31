@@ -211,7 +211,21 @@ class AudioEngine {
   setMasterVolume(volume: number): void {
     this.masterVolume = clamp(volume, 0, 1);
     if (this.masterGain && this.context) {
-      this.masterGain.gain.setTargetAtTime(this.masterVolume, this.context.currentTime, 0.01);
+      if (this.context.state === 'suspended') {
+        void this.context.resume();
+      }
+      this.masterGain.gain.setValueAtTime(this.masterVolume, this.context.currentTime);
+    }
+  }
+
+  /** Update gain of active playbacks for a pad in real time when volume changes */
+  updatePadVolume(padId: string, volume: number): void {
+    if (!this.context) return;
+    const clamped = clamp(volume, 0, 1);
+    for (const instance of this.activePlaybacks.values()) {
+      if (instance.padId === padId && instance.gainNode) {
+        instance.gainNode.gain.setValueAtTime(clamped, this.context.currentTime);
+      }
     }
   }
 

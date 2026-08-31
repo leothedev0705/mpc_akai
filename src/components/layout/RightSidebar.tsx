@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { Trash2, Repeat, Volume2 } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { Trash2, Repeat, Volume2, Upload, Scissors, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { getActiveBank } from '@/utils';
@@ -15,8 +16,12 @@ export function RightSidebar() {
   const selectedPadId = useProjectStore((s) => s.selectedPadId);
   const updatePad = useProjectStore((s) => s.updatePad);
   const clearPad = useProjectStore((s) => s.clearPad);
+  const uploadFiles = useProjectStore((s) => s.uploadFiles);
+  const assignAssetToPad = useProjectStore((s) => s.assignAssetToPad);
+  const chopToPads = useProjectStore((s) => s.chopToPads);
   const setWaveformPadId = useUIStore((s) => s.setWaveformPadId);
   const rightSidebarOpen = useUIStore((s) => s.rightSidebarOpen);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const bank = getActiveBank(project);
   const pad = useMemo(
@@ -27,6 +32,32 @@ export function RightSidebar() {
     () => (pad?.assetId ? assets.find((a) => a.id === pad.assetId) : undefined),
     [pad, assets],
   );
+
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !pad) return;
+    try {
+      const uploaded = await uploadFiles(files);
+      if (uploaded.length > 0) {
+        assignAssetToPad(pad.id, uploaded[0].id);
+        toast.success(`Assigned "${uploaded[0].name}" to Pad ${String(bank.pads.findIndex(p => p.id === pad.id) + 1).padStart(2, '0')}`);
+      }
+    } catch (err) {
+      console.error('Failed to load audio file:', err);
+      toast.error('Failed to load audio file');
+    }
+  };
+
+  const handleChop = async () => {
+    if (!pad?.assetId) return;
+    try {
+      const realAssetId = pad.assetId.split(':chop:')[0];
+      await chopToPads(realAssetId);
+      toast.success('Chopped sample across all 16 pads!');
+    } catch (err) {
+      console.error('Chop failed:', err);
+      toast.error('Chop failed');
+    }
+  };
 
   if (!rightSidebarOpen) return null;
 
@@ -47,12 +78,58 @@ export function RightSidebar() {
           </div>
         ) : (
           <div className="space-y-5">
+            {/* Custom Beat / Audio Load Section */}
+            <div className="p-3 rounded-xl bg-accent/5 border border-accent/20 space-y-2">
+              <span className="text-[10px] font-mono text-accent font-bold uppercase tracking-wider block">
+                Assign Custom Audio / Beat
+              </span>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-2 px-3 rounded-lg bg-accent/20 hover:bg-accent/30 text-accent font-bold text-xs flex items-center justify-center gap-2 border border-accent/40 transition-all cursor-pointer touch-manipulation"
+              >
+                <Upload size={14} />
+                <span>LOAD AUDIO / BEAT FILE</span>
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.webm"
+                className="hidden"
+                onChange={(e) => void handleFileUpload(e.target.files)}
+              />
+
+              <p className="text-[9px] text-muted text-center">
+                Supports WAV, MP3, M4A, OGG, FLAC & WebM
+              </p>
+
+              {pad.assetId && (
+                <div className="flex gap-1.5 pt-1">
+                  <button
+                    onClick={handleChop}
+                    className="flex-1 py-1 px-2 rounded bg-cyan-950/60 hover:bg-cyan-900/80 text-[#00E5FF] text-[10px] font-bold border border-[#00E5FF]/30 flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Scissors size={12} />
+                    CHOP 16
+                  </button>
+                  <button
+                    onClick={() => clearPad(pad.id)}
+                    className="py-1 px-2 rounded bg-white/5 hover:bg-white/10 text-muted hover:text-white text-[10px] font-bold border border-white/10 flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={11} />
+                    RESET
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Name */}
             <div>
-              <label className="text-xs text-muted block mb-1.5">Pad Name</label>
+              <label className="text-xs text-muted block mb-1.5">Pad Display Name</label>
               <input
                 type="text"
-                value={pad.assetId && asset ? asset.name : (pad.name || `PAD ${String(bank.pads.findIndex(p => p.id === pad.id) + 1).padStart(2, '0')}`)}
+                value={pad.name || `PAD ${String(bank.pads.findIndex(p => p.id === pad.id) + 1).padStart(2, '0')}`}
                 onChange={(e) => updatePad(pad.id, { name: e.target.value })}
                 className="w-full bg-surface-2 border border-white/8 rounded-lg px-3 py-2 text-sm outline-none focus:border-accent/40 transition-colors font-mono"
               />
@@ -61,7 +138,7 @@ export function RightSidebar() {
             {/* Asset info */}
             {asset && (
               <div className="p-3 rounded-lg bg-surface-2 border border-white/6">
-                <p className="text-xs text-muted mb-1">Assigned Audio</p>
+                <p className="text-xs text-muted mb-1">Assigned Audio File</p>
                 <p className="text-sm font-medium truncate">{asset.name}</p>
                 <p className="text-[10px] text-muted mt-1 capitalize">{asset.type}</p>
               </div>

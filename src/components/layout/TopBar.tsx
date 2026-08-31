@@ -1,31 +1,53 @@
 import { useEffect, useRef, useState } from 'react';
-import { Save, FolderOpen, Settings, Loader2 } from 'lucide-react';
+import { Save, FolderOpen, Settings, Loader2, Music } from 'lucide-react';
+import { toast } from 'sonner';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 import { Button } from '@/components/ui/Button';
 import { audioEngine } from '@/services/audioEngine';
+import { getActiveBank } from '@/utils';
 
 export function TopBar() {
-  const projectName = useProjectStore((s) => s.project.name);
+  const project = useProjectStore((s) => s.project);
+  const projectName = project.name;
   const isSaving = useProjectStore((s) => s.isSaving);
   const setProjectName = useProjectStore((s) => s.setProjectName);
   const saveProject = useProjectStore((s) => s.saveProject);
+  const uploadFiles = useProjectStore((s) => s.uploadFiles);
+  const assignAssetToPad = useProjectStore((s) => s.assignAssetToPad);
+  const selectedPadId = useProjectStore((s) => s.selectedPadId);
   const setLoadModalOpen = useUIStore((s) => s.setLoadModalOpen);
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
   
   const masterLevel = useProjectStore((s) => s.masterLevel);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   
   // Smooth lerp for analog needle meter
   const [smoothLevel, setSmoothLevel] = useState(0);
   const needleValueRef = useRef(0);
 
+  const handleImportBeat = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    try {
+      const uploaded = await uploadFiles(files);
+      if (uploaded.length > 0) {
+        const bank = getActiveBank(project);
+        const targetPadId = selectedPadId || bank.pads[0].id;
+        assignAssetToPad(targetPadId, uploaded[0].id);
+        toast.success(`Loaded "${uploaded[0].name}" onto Pad!`);
+      }
+    } catch (err) {
+      console.error('Import failed:', err);
+      toast.error('Failed to import beat');
+    }
+  };
+
   useEffect(() => {
     let animId: number;
     const updateNeedle = () => {
       const target = masterLevel;
-      // Lerp with spring-like response
-      needleValueRef.current += (target - needleValueRef.current) * 0.15;
+      needleValueRef.current += (target - needleValueRef.current) * 0.25;
       setSmoothLevel(needleValueRef.current);
       animId = requestAnimationFrame(updateNeedle);
     };
@@ -33,7 +55,7 @@ export function TopBar() {
     return () => cancelAnimationFrame(animId);
   }, [masterLevel]);
 
-  // Oscilloscope canvas loop
+  // Canvas Oscilloscope visualizer loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -41,112 +63,71 @@ export function TopBar() {
     if (!ctx) return;
 
     let animId: number;
-    const bufferLength = 128;
-    const dataArray = new Uint8Array(bufferLength);
-
     const draw = () => {
-      animId = requestAnimationFrame(draw);
-      
+      const analyser = audioEngine.getAnalyser();
       const width = canvas.width;
       const height = canvas.height;
-      
-      ctx.clearRect(0, 0, width, height);
 
-      const analyser = audioEngine.getAnalyser();
-      if (analyser) {
-        analyser.getByteTimeDomainData(dataArray);
-      } else {
-        // Fallback: idle noise hum
-        for (let i = 0; i < bufferLength; i++) {
-          dataArray[i] = 128 + Math.sin(Date.now() * 0.005 + i * 0.1) * 2 * (Math.random() * 0.5 + 0.5);
-        }
+      ctx.fillStyle = 'rgba(10, 10, 12, 0.25)';
+      ctx.fillRect(0, 0, width, height);
+
+      if (!analyser) {
+        // Draw flat line when no audio playing
+        ctx.beginPath();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+        animId = requestAnimationFrame(draw);
+        return;
       }
 
-      ctx.lineWidth = 1.5;
-      
-      // Draw Stereo Waveform (Line 1: White/Grey top, Line 2: Blue/Grey bottom)
+      const bufferLength = analyser.frequencyBinCount;
+      const timeData = new Uint8Array(bufferLength);
+      analyser.getByteTimeDomainData(timeData);
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ff4500';
       ctx.beginPath();
-      let sliceWidth = width / bufferLength;
+
+      const sliceWidth = width / bufferLength;
       let x = 0;
 
       for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[i] / 128.0;
-        // Apply slight stereo spacing shift for visual complexity
-        const offset = Math.sin(i * 0.2 + Date.now() * 0.01) * 3 * (masterLevel + 0.05);
-        const y = (v * height) / 2 + offset - 4;
+        const v = timeData[i] / 128.0;
+        const y = (v * height) / 2;
 
         if (i === 0) {
           ctx.moveTo(x, y);
         } else {
           ctx.lineTo(x, y);
         }
-
         x += sliceWidth;
       }
-      ctx.strokeStyle = 'rgba(230, 230, 230, 0.7)';
-      ctx.shadowBlur = 4;
-      ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
+
+      ctx.lineTo(width, height / 2);
       ctx.stroke();
 
-      // Lower secondary line (Out of phase look)
-      ctx.beginPath();
-      x = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[bufferLength - 1 - i] / 128.0;
-        const offset = Math.cos(i * 0.25 + Date.now() * 0.008) * 4 * (masterLevel + 0.05);
-        const y = (v * height) / 2 + offset + 4;
-
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-
-        x += sliceWidth;
-      }
-      ctx.strokeStyle = 'rgba(150, 160, 180, 0.4)';
-      ctx.shadowBlur = 0;
-      ctx.stroke();
+      animId = requestAnimationFrame(draw);
     };
 
     draw();
     return () => cancelAnimationFrame(animId);
-  }, [masterLevel]);
+  }, []);
 
-  // Analog meter angle: -60deg to +60deg
-  const needleAngle = (smoothLevel * 100); // map from 0..1 to angle degrees (approx 0 to 80 deg rotation)
-  const clampedAngle = Math.min(85, Math.max(-5, needleAngle - 40));
+  const clampedAngle = -45 + Math.min(1, smoothLevel * 1.6) * 90;
 
   return (
-    <header className="bg-[#0b0b0c] text-white flex items-center justify-between px-6 h-20 shrink-0 border-b border-[#1b1b1c] z-10 select-none">
-      {/* Center-Left: Wireframe Diamond & Twin Level Bars */}
-      <div className="flex items-center gap-6">
-        {/* Wireframe Diamond */}
-        <div className="relative w-10 h-10 flex items-center justify-center">
-          <svg width="36" height="36" viewBox="0 0 100 100" className="animate-[spin_8s_linear_infinite]">
-            <polygon
-              points="50,5 95,50 50,95 5,50"
-              fill="none"
-              stroke="rgba(255,255,255,0.7)"
-              strokeWidth="2.5"
-            />
-            <line x1="50" y1="5" x2="50" y2="95" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" />
-            <line x1="5" y1="50" x2="95" y2="50" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" />
-            <polygon
-              points="50,20 80,50 50,80 20,50"
-              fill="none"
-              stroke="rgba(255,255,255,0.4)"
-              strokeWidth="1.5"
-            />
-          </svg>
-        </div>
-
-        {/* Twin Vertical VU Meters */}
-        <div className="flex gap-1 h-9 sm:h-12 bg-black/40 p-1 sm:p-1.5 rounded border border-white/5">
+    <header className="glass h-16 border-b border-white/6 px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none">
+      {/* Left: Master Stereo VU Peak Indicators */}
+      <div className="flex items-center gap-2 sm:gap-4">
+        {/* LED Peak Bars */}
+        <div className="flex items-center gap-1 bg-black/40 px-2 py-1 rounded border border-white/5">
           {[0, 1].map((ch) => (
-            <div key={ch} className="w-1.5 h-full bg-neutral-900 rounded-sm overflow-hidden flex flex-col justify-end">
+            <div key={ch} className="w-1.5 h-7 bg-neutral-900 rounded-sm overflow-hidden flex flex-col-reverse">
               <div
-                className="w-full bg-gradient-to-t from-emerald-500 via-yellow-500 to-red-500 transition-all duration-75"
+                className="w-full bg-gradient-to-t from-emerald-500 via-yellow-400 to-red-500 transition-all duration-75"
                 style={{ height: `${Math.min(100, masterLevel * 140 * (ch === 0 ? 0.95 : 1.05))}%` }}
               />
             </div>
@@ -172,7 +153,7 @@ export function TopBar() {
       </div>
 
       {/* Right: Analog Needle VU Meter & Actions */}
-      <div className="flex items-center gap-2 sm:gap-6">
+      <div className="flex items-center gap-2 sm:gap-4">
         {/* Analog Needle VU Meter (Hidden on mobile) */}
         <div className="hidden sm:flex relative w-20 sm:w-24 h-12 sm:h-14 bg-neutral-950 border border-neutral-800 rounded-lg overflow-hidden flex-col items-center justify-end p-1 shadow-inner">
           {/* Radial Arc scale */}
@@ -210,15 +191,38 @@ export function TopBar() {
               AUTO
             </span>
           )}
+
+          {/* Import Beat Button */}
+          <Button
+            variant="accent"
+            size="sm"
+            onClick={() => importInputRef.current?.click()}
+            className="bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] border border-[#00E5FF]/40 font-mono text-xs px-2.5 py-1 flex items-center gap-1 cursor-pointer touch-manipulation"
+          >
+            <Music size={13} />
+            <span className="hidden sm:inline font-bold">ADD BEAT</span>
+          </Button>
+
+          <input
+            ref={importInputRef}
+            type="file"
+            multiple
+            accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.webm"
+            className="hidden"
+            onChange={(e) => void handleImportBeat(e.target.files)}
+          />
+
           <Button variant="ghost" size="sm" onClick={() => void saveProject()} className="hover:text-red-500 text-neutral-400 font-mono text-xs px-2 py-1">
             <Save size={13} className="sm:mr-1" />
             <span className="hidden sm:inline">SAVE</span>
           </Button>
+
           <Button variant="ghost" size="sm" onClick={() => setLoadModalOpen(true)} className="hover:text-red-500 text-neutral-400 font-mono text-xs px-2 py-1">
             <FolderOpen size={13} className="sm:mr-1" />
             <span className="hidden sm:inline">LOAD</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="hover:text-red-500 text-neutral-400 px-2 py-1">
+
+          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} className="hover:text-red-500 text-neutral-400 p-1.5">
             <Settings size={14} />
           </Button>
         </div>

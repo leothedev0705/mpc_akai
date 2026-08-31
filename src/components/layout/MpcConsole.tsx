@@ -592,22 +592,35 @@ export function MpcConsole() {
                 </div>
                 
                 {/* Fader track */}
-                <div className="h-full w-[4px] bg-[#121214] rounded-full border border-neutral-800 relative">
+                <div 
+                  className="h-full w-[6px] bg-[#121214] rounded-full border border-neutral-800 relative cursor-pointer"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+                    handleSliderChange(y);
+                  }}
+                >
                   {/* Slider Knob */}
                   <div
-                    className="absolute left-[-9px] w-5 h-8 bg-gradient-to-b from-[#ececed] via-[#9da2a6] to-[#6a6d70] border border-neutral-800 rounded-sm cursor-pointer shadow-md hover:brightness-110 active:brightness-95 flex flex-col items-center justify-center gap-0.5 touch-none"
+                    className="absolute left-[-8px] w-5 h-8 bg-gradient-to-b from-[#ececed] via-[#9da2a6] to-[#6a6d70] border border-neutral-800 rounded-sm cursor-grab active:cursor-grabbing shadow-md hover:brightness-110 active:brightness-95 flex flex-col items-center justify-center gap-0.5 touch-none"
                     style={{ bottom: (sliderCurrentValue * 80) + '%' }}
                     onPointerDown={(e) => {
-                      const track = e.currentTarget.parentElement;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const target = e.currentTarget;
+                      try { target.setPointerCapture(e.pointerId); } catch {}
+                      const track = target.parentElement;
                       if (!track) return;
                       const rect = track.getBoundingClientRect();
                       
                       const moveHandler = (moveEvent: PointerEvent) => {
+                        moveEvent.preventDefault();
                         const y = Math.max(0, Math.min(1, 1 - (moveEvent.clientY - rect.top) / rect.height));
                         handleSliderChange(y);
                       };
                       
-                      const upHandler = () => {
+                      const upHandler = (upEvent: PointerEvent) => {
+                        try { target.releasePointerCapture(upEvent.pointerId); } catch {}
                         window.removeEventListener('pointermove', moveHandler);
                         window.removeEventListener('pointerup', upHandler);
                       };
@@ -816,16 +829,22 @@ export function MpcConsole() {
                     className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-b from-[#2e2e30] to-[#121213] border-2 border-neutral-900 shadow-md cursor-ns-resize flex items-center justify-center touch-none"
                     onPointerDown={(e) => {
                       if (!dial.setVal) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const target = e.currentTarget;
+                      try { target.setPointerCapture(e.pointerId); } catch {}
                       const startY = e.clientY;
                       const startVal = dial.val;
                       
                       const moveHandler = (moveEvent: PointerEvent) => {
+                        moveEvent.preventDefault();
                         const deltaY = startY - moveEvent.clientY;
-                        const newVal = Math.max(0, Math.min(1, startVal + deltaY * 0.005));
+                        const newVal = Math.max(0, Math.min(1, startVal + deltaY * 0.008));
                         dial.setVal?.(newVal);
                       };
 
-                      const upHandler = () => {
+                      const upHandler = (upEvent: PointerEvent) => {
+                        try { target.releasePointerCapture(upEvent.pointerId); } catch {}
                         window.removeEventListener('pointermove', moveHandler);
                         window.removeEventListener('pointerup', upHandler);
                       };
