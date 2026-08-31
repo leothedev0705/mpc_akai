@@ -28,6 +28,9 @@ export interface PadConfig {
   name: string;
   color: PadColor;
   volume: number;
+  pan?: number; // -1 (Left) to 1 (Right), 0 = Center
+  tune?: number; // -12 to +12 semitones
+  cutoff?: number; // 20 to 20000 Hz lowpass cutoff
   loop: boolean;
   exclusive: boolean;
   muted: boolean;
@@ -42,14 +45,26 @@ export interface Bank {
   pads: PadConfig[];
 }
 
+export type MPCMode = 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS';
+
+export type SliderTarget = 'VOLUME' | 'TUNE' | 'FILTER';
+
+export interface StepSequence {
+  padId: string;
+  steps: boolean[]; // 16 steps
+}
+
 export interface Project {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
   masterVolume: number;
+  bpm: number;
+  swing: number; // 50 to 75
   activeBankId: BankId;
   banks: Bank[];
+  sequences: StepSequence[];
   libraryAssetIds: string[];
 }
 

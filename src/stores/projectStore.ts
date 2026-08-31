@@ -9,6 +9,7 @@ import {
 } from '@/utils';
 import { dbService } from '@/services/storageService';
 import { audioEngine } from '@/services/audioEngine';
+import { useUIStore } from '@/stores/uiStore';
 
 interface ProjectState {
   project: Project;
@@ -21,6 +22,13 @@ interface ProjectState {
   masterLevel: number;
   isPaused: boolean;
 
+  // Authentic MPC 2000XL Hardware Modes & Sequencer
+  mpcMode: 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS';
+  sliderTarget: 'VOLUME' | 'TUNE' | 'FILTER';
+  is16Levels: boolean;
+  currentStep: number;
+  isPlayingSequencer: boolean;
+
   init: () => Promise<void>;
   newProject: (name?: string) => void;
   loadProject: (id: string) => Promise<boolean>;
@@ -32,10 +40,18 @@ interface ProjectState {
   assignAssetToPad: (padId: string, assetId: string) => void;
   clearPad: (padId: string) => void;
   setMasterVolume: (volume: number) => void;
+  setBpm: (bpm: number) => void;
+  setSwing: (swing: number) => void;
+  setMpcMode: (mode: 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS') => void;
+  setSliderTarget: (target: 'VOLUME' | 'TUNE' | 'FILTER') => void;
+  toggle16Levels: () => void;
+  toggleStep: (padId: string, stepIndex: number) => void;
+  startSequencer: () => void;
+  stopSequencer: () => void;
   uploadFiles: (files: FileList | File[]) => Promise<AudioAsset[]>;
   deleteAsset: (assetId: string) => Promise<void>;
   preloadAssets: () => Promise<void>;
-  triggerPad: (padId: string) => Promise<void>;
+  triggerPad: (padId: string, pitchShift?: number) => Promise<void>;
   stopPad: (padId: string) => void;
   stopAll: () => void;
   pauseAll: () => void;
@@ -44,6 +60,8 @@ interface ProjectState {
   setVuLevel: (padId: string, level: number) => void;
   setMasterLevel: (level: number) => void;
 }
+
+let seqTimerId: ReturnType<typeof setTimeout> | null = null;
 
 const debouncedSave = debounce(async (get: () => ProjectState) => {
   const { project, saveProject } = get();
@@ -55,18 +73,110 @@ export const useProjectStore = create<ProjectState>()(
     project: createDefaultProject(),
     assets: [],
     selectedPadId: null,
-    isLoading: true,
+    isLoading: false,
     isSaving: false,
     playingPadIds: new Set(),
     vuLevels: {},
     masterLevel: 0,
     isPaused: false,
 
+    mpcMode: 'MAIN',
+    sliderTarget: 'VOLUME',
+    is16Levels: false,
+    currentStep: 0,
+    isPlayingSequencer: false,
+
+    setBpm: (bpm) => {
+      set((s) => ({ project: { ...s.project, bpm: Math.max(40, Math.min(240, bpm)), updatedAt: Date.now() } }));
+      debouncedSave(get);
+    },
+
+    setSwing: (swing) => {
+      set((s) => ({ project: { ...s.project, swing: Math.max(50, Math.min(75, swing)), updatedAt: Date.now() } }));
+      debouncedSave(get);
+    },
+
+    setMpcMode: (mode) => set({ mpcMode: mode }),
+
+    setSliderTarget: (target) => set({ sliderTarget: target }),
+
+    toggle16Levels: () => {
+      set((s) => {
+        const next = !s.is16Levels;
+        return { is16Levels: next, mpcMode: next ? '16_LEVELS' : 'MAIN' };
+      });
+    },
+
+    toggleStep: (padId, stepIndex) => {
+      set((s) => {
+        const sequences = [...(s.project.sequences || [])];
+        let seq = sequences.find((sq) => sq.padId === padId);
+        if (!seq) {
+          seq = { padId, steps: new Array(16).fill(false) };
+          sequences.push(seq);
+        }
+        const updatedSteps = [...seq.steps];
+        updatedSteps[stepIndex] = !updatedSteps[stepIndex];
+        seq.steps = updatedSteps;
+
+        return {
+          project: {
+            ...s.project,
+            sequences,
+            updatedAt: Date.now(),
+          },
+        };
+      });
+      debouncedSave(get);
+    },
+
+    startSequencer: () => {
+      if (get().isPlayingSequencer) return;
+      set({ isPlayingSequencer: true, currentStep: 0 });
+
+      const scheduleStep = () => {
+        if (!get().isPlayingSequencer) return;
+
+        const { project, currentStep, triggerPad } = get();
+        const bpm = project.bpm || 130;
+        const swing = project.swing || 54;
+        const sixteenthTime = (60 / bpm) / 4; // seconds
+
+        // MPC Swing delay calculation for odd steps (1, 3, 5...)
+        const isOdd = currentStep % 2 === 1;
+        const swingOffset = isOdd ? ((swing - 50) / 100) * sixteenthTime : 0;
+        const stepDurationMs = (sixteenthTime + (isOdd ? swingOffset : -swingOffset)) * 1000;
+
+        // Trigger any pads active on this step
+        if (project.sequences) {
+          for (const seq of project.sequences) {
+            if (seq.steps[currentStep]) {
+              void triggerPad(seq.padId);
+            }
+          }
+        }
+
+        // Advance to next step (0 to 15)
+        set((s) => ({ currentStep: (s.currentStep + 1) % 16 }));
+
+        seqTimerId = setTimeout(scheduleStep, Math.max(10, stepDurationMs));
+      };
+
+      scheduleStep();
+    },
+
+    stopSequencer: () => {
+      if (seqTimerId) {
+        clearTimeout(seqTimerId);
+        seqTimerId = null;
+      }
+      set({ isPlayingSequencer: false, currentStep: 0 });
+    },
+
     init: async () => {
-      set({ isLoading: true });
       try {
         await dbService.init();
-        const assets = await dbService.getAllAssets();
+        const assets = await dbService.getAllAssets().catch(() => []);
         set({ assets });
 
         audioEngine.setLevelCallback((padId, level) => {
@@ -80,14 +190,16 @@ export const useProjectStore = create<ProjectState>()(
           }
         });
 
-        await get().preloadAssets();
+        await get().preloadAssets().catch(() => {});
 
         audioEngine.setMasterVolume(get().project.masterVolume);
 
-        const projects = await dbService.listProjects();
+        const projects = await dbService.listProjects().catch(() => []);
         if (projects.length > 0) {
-          await get().loadProject(projects[0].id);
+          await get().loadProject(projects[0].id).catch(() => {});
         }
+      } catch (err) {
+        console.warn('Init error handled:', err);
       } finally {
         set({ isLoading: false });
       }
@@ -95,7 +207,7 @@ export const useProjectStore = create<ProjectState>()(
 
     newProject: (name) => {
       const project = createDefaultProject(name);
-      set({ project, selectedPadId: null, playingPadIds: new Set() });
+      set({ project, selectedPadId: null, playingPadIds: new Set(), currentStep: 0, isPlayingSequencer: false });
       debouncedSave(get);
     },
 
@@ -103,9 +215,15 @@ export const useProjectStore = create<ProjectState>()(
       const stored = await dbService.loadProject(id);
       if (!stored) return false;
       try {
-        const project = JSON.parse(stored.projectJson) as Project;
-        set({ project, selectedPadId: null, playingPadIds: new Set() });
-        await get().preloadAssets();
+        const parsed = JSON.parse(stored.projectJson) as Project;
+        const defaultProj = createDefaultProject();
+        const project: Project = {
+          ...defaultProj,
+          ...parsed,
+          banks: parsed.banks?.length ? parsed.banks : defaultProj.banks,
+        };
+        set({ project, selectedPadId: null, playingPadIds: new Set(), currentStep: 0, isPlayingSequencer: false });
+        await get().preloadAssets().catch(() => {});
         return true;
       } catch {
         return false;
@@ -232,27 +350,56 @@ export const useProjectStore = create<ProjectState>()(
       }
     },
 
-    triggerPad: async (padId) => {
+    triggerPad: async (padId, pitchShift = 0) => {
       await audioEngine.ensureContext();
-      const { project } = get();
+      const { project, is16Levels, selectedPadId } = get();
       const bank = getActiveBank(project);
-      const pad = bank.pads.find((p) => p.id === padId);
-      if (!pad || !pad.assetId || pad.muted) return;
+
+      // In 16-Levels mode, use the selected pad's sample and pitch-shift it
+      let targetPad = bank.pads.find((p) => p.id === padId);
+      if (is16Levels && selectedPadId) {
+        const sourcePad = bank.pads.find((p) => p.id === selectedPadId);
+        if (sourcePad && sourcePad.assetId) {
+          targetPad = {
+            ...sourcePad,
+            id: padId,
+            tune: pitchShift || 0,
+          };
+        }
+      }
+
+      if (!targetPad || !targetPad.assetId || targetPad.muted) return;
+
+      // Handle Stop button pad
+      if (targetPad.assetId === 'default-synth-stop' || targetPad.name.toLowerCase() === 'stop') {
+        get().stopAll();
+        get().setPlayingPad(padId, true);
+        setTimeout(() => get().setPlayingPad(padId, false), 150);
+        return;
+      }
+
+      // Handle Info button pad
+      if (targetPad.assetId === 'default-synth-info' || targetPad.name.toLowerCase().includes('info')) {
+        useUIStore.getState().setInfoModalOpen(true);
+      }
 
       const hasSolo = bank.pads.some((p) => p.solo);
-      if (hasSolo && !pad.solo) return;
+      if (hasSolo && !targetPad.solo) return;
 
-      if (pad.exclusive) {
+      if (targetPad.exclusive) {
         audioEngine.stopPad(padId);
       }
 
-      const effectiveVolume = pad.volume * project.masterVolume;
+      const effectiveVolume = targetPad.volume * project.masterVolume;
       await audioEngine.playPad({
         padId,
-        assetId: pad.assetId,
+        assetId: targetPad.assetId,
         volume: effectiveVolume,
-        loop: pad.loop,
-        exclusive: pad.exclusive,
+        pan: targetPad.pan ?? 0,
+        tune: targetPad.tune ?? 0,
+        cutoff: targetPad.cutoff ?? 20000,
+        loop: targetPad.loop,
+        exclusive: targetPad.exclusive,
       });
 
       get().setPlayingPad(padId, true);
@@ -264,6 +411,7 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     stopAll: () => {
+      get().stopSequencer();
       audioEngine.stopAll(0.08);
       set({ playingPadIds: new Set(), isPaused: false });
     },

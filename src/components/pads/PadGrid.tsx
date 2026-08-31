@@ -12,15 +12,20 @@ export const PadGrid = memo(function PadGrid() {
   const triggerPad = useProjectStore((s) => s.triggerPad);
   const selectPad = useProjectStore((s) => s.selectPad);
   const assignAssetToPad = useProjectStore((s) => s.assignAssetToPad);
+  const is16Levels = useProjectStore((s) => s.is16Levels);
 
   const bank = getActiveBank(project);
   const assetMap = new Map(assets.map((a) => [a.id, a]));
 
+  // 16-Levels semitone mapping (-12 to +12 st)
+  const PITCH_MAP = [-12, -10, -8, -7, -5, -4, -2, 0, 1, 2, 4, 5, 7, 8, 10, 12];
+
   const handleTrigger = useCallback(
-    (padId: string) => {
-      void triggerPad(padId);
+    (padId: string, index: number) => {
+      const pitchShift = is16Levels ? (PITCH_MAP[index] ?? 0) : 0;
+      void triggerPad(padId, pitchShift);
     },
-    [triggerPad],
+    [triggerPad, is16Levels],
   );
 
   const handleSelect = useCallback(
@@ -38,15 +43,15 @@ export const PadGrid = memo(function PadGrid() {
   );
 
   return (
-    <div className="flex items-center justify-center h-full p-4">
+    <div className="w-full h-full flex items-center justify-center p-2">
       <div
-        className="grid gap-3 w-full max-w-[520px]"
-        style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}
+        className="grid grid-cols-4 gap-2.5 sm:gap-3.5 w-full max-w-[460px] aspect-square"
         role="grid"
         aria-label={`Pad grid - Bank ${bank.id}`}
       >
         {bank.pads.map((pad, index) => {
           const asset = pad.assetId ? assetMap.get(pad.assetId) : undefined;
+          const pitchOffset = is16Levels ? PITCH_MAP[index] : undefined;
           return (
             <Pad
               key={pad.id}
@@ -56,7 +61,8 @@ export const PadGrid = memo(function PadGrid() {
               isSelected={selectedPadId === pad.id}
               vuLevel={vuLevels[pad.id] ?? 0}
               assetName={asset?.name}
-              onTrigger={handleTrigger}
+              pitchOffset={pitchOffset}
+              onTrigger={(id) => handleTrigger(id, index)}
               onSelect={handleSelect}
               onAssignAsset={handleAssign}
             />

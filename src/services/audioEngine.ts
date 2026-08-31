@@ -98,144 +98,289 @@ class AudioEngine {
   private synthesizeDefaultSound(assetId: string): AudioBuffer | undefined {
     if (!this.context) return undefined;
     const sampleRate = this.context.sampleRate;
-    
-    if (assetId.includes('vocal')) {
-      const duration = 0.8;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    const lowerId = assetId.toLowerCase();
+
+    if (lowerId.includes('vocal')) {
+      const duration = 0.85;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
       const data = buffer.getChannelData(0);
-      const isAlt = assetId.includes('2') || assetId.includes('4');
-      const baseFreq = isAlt ? 220 : 165;
+      
+      // Determine vocal pitch based on vocal number
+      let baseFreq = 164.81; // Vocal 1: E3
+      if (lowerId.includes('2')) baseFreq = 220.00; // Vocal 2: A3
+      if (lowerId.includes('3')) baseFreq = 246.94; // Vocal 3: B3
+      if (lowerId.includes('4')) baseFreq = 329.63; // Vocal 4: E4
+
+      // Formants for vowel synthesis ("Ah" / "Oh" / "Ee")
+      const formant1 = baseFreq > 240 ? 800 : 650;
+      const formant2 = baseFreq > 240 ? 1200 : 1050;
+
       for (let i = 0; i < data.length; i++) {
         const t = i / sampleRate;
-        const env = Math.exp(-t * 5);
-        const wave = Math.sin(2 * Math.PI * baseFreq * t) + 
-                     0.5 * Math.sin(2 * Math.PI * baseFreq * 2 * t) +
-                     0.3 * Math.sin(2 * Math.PI * 650 * t) * Math.sin(2 * Math.PI * 50 * t) + 
-                     0.2 * Math.sin(2 * Math.PI * 1200 * t);
-        data[i] = wave * env * 0.3;
+        // Pitch envelope: slight initial glide like human vocal bend
+        const pitchBend = 1.0 + 0.04 * Math.exp(-t * 15);
+        const f = baseFreq * pitchBend;
+        
+        // Amplitude envelope (ADSR)
+        const attack = Math.min(1, t / 0.03);
+        const decay = Math.exp(-t * 3.5);
+        const env = attack * decay;
+
+        // Rich harmonics + formant resonance
+        let wave = Math.sin(2 * Math.PI * f * t) +
+                   0.6 * Math.sin(2 * Math.PI * f * 2 * t) +
+                   0.4 * Math.sin(2 * Math.PI * f * 3 * t) +
+                   0.25 * Math.sin(2 * Math.PI * f * 4 * t);
+        
+        // Formant filtering effect
+        const formantMod = Math.sin(2 * Math.PI * formant1 * t) * 0.35 +
+                           Math.sin(2 * Math.PI * formant2 * t) * 0.2;
+        
+        // Vibrato on tail
+        const vibrato = t > 0.2 ? Math.sin(2 * Math.PI * 5.5 * t) * 0.05 : 0;
+
+        data[i] = (wave * (1 + formantMod + vibrato)) * env * 0.32;
       }
       return buffer;
-    } else if (assetId.includes('guitar')) {
-      const duration = 1.5;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    } else if (lowerId.includes('father')) {
+      // FAAAATHER: Full Hammond B3 organ gospel chords (E maj / C# min) + deep sub
+      const duration = 2.4;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
       const data = buffer.getChannelData(0);
-      const freq = 164.81;
-      const L = Math.round(sampleRate / freq);
-      const ringBuffer = new Float32Array(L);
-      for (let i = 0; i < L; i++) {
-        ringBuffer[i] = Math.random() * 2 - 1;
-      }
-      let pointer = 0;
-      for (let i = 0; i < data.length; i++) {
-        const val = ringBuffer[pointer];
-        data[i] = val;
-        const nextPointer = (pointer + 1) % L;
-        ringBuffer[pointer] = (val + ringBuffer[nextPointer]) * 0.5 * 0.992;
-        pointer = nextPointer;
-      }
-      return buffer;
-    } else if (assetId.includes('father')) {
-      const duration = 2.0;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) {
-        const t = i / sampleRate;
-        const env = Math.exp(-t * 1.5);
-        const freq = 55 + Math.exp(-t * 6) * 110;
-        data[i] = Math.sin(2 * Math.PI * freq * t) * env * 0.6;
-      }
-      return buffer;
-    } else if (assetId.includes('badtous') || assetId.includes('lordlong') || assetId.includes('intro')) {
-      const duration = 3.0;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
-      const data = buffer.getChannelData(0);
-      const baseFreq = assetId.includes('intro') ? 110 : 130.81;
-      const freqs = [baseFreq, baseFreq * 1.2, baseFreq * 1.5, baseFreq * 1.8];
+      const chordFreqs = [164.81, 207.65, 246.94, 329.63, 415.30]; // Emaj chord
+      
       for (let i = 0; i < data.length; i++) {
         const t = i / sampleRate;
-        let env = 1;
-        if (t < 0.3) env = t / 0.3;
-        else env = Math.max(0, 1 - (t - 0.3) / 2.7);
+        const attack = Math.min(1, t / 0.04);
+        const env = attack * Math.exp(-t * 1.2);
+        
+        // Leslie rotor tremolo effect (approx 6.5 Hz)
+        const rotor = 1 + 0.18 * Math.sin(2 * Math.PI * 6.5 * t);
+        
         let sample = 0;
-        for (const f of freqs) {
-          sample += Math.sin(2 * Math.PI * f * t) * Math.sin(2 * Math.PI * 0.5 * t);
+        for (let fi = 0; fi < chordFreqs.length; fi++) {
+          const f = chordFreqs[fi];
+          // Hammond drawbar harmonics (fundamental, octave, 3rd harmonic)
+          sample += (Math.sin(2 * Math.PI * f * t) * 0.5 +
+                     Math.sin(2 * Math.PI * f * 2 * t) * 0.3 +
+                     Math.sin(2 * Math.PI * f * 3 * t) * 0.15);
         }
-        data[i] = (sample / freqs.length) * env * 0.4;
+        
+        // Warm sub bass foundation
+        const sub = Math.sin(2 * Math.PI * 82.41 * t) * Math.exp(-t * 1.8) * 0.5;
+        data[i] = (sample / chordFreqs.length * rotor * 0.6 + sub) * env * 0.45;
       }
       return buffer;
-    } else if (assetId.includes('seethiscoat')) {
-      const duration = 0.5;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) {
-        const t = i / sampleRate;
-        const env = Math.exp(-t * 15);
-        let val = Math.random() * 2 - 1;
-        if (i > 0) val = val - data[i-1];
-        data[i] = val * env * 0.25;
-      }
-      return buffer;
-    } else if (assetId.includes('lordfast')) {
+    } else if (lowerId.includes('badtous')) {
+      // Bad To Us: Soulful gospel chop with warm chorus
       const duration = 2.0;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
       const data = buffer.getChannelData(0);
+      const chord = [130.81, 155.56, 196.00, 233.08]; // C minor 7th
+      
       for (let i = 0; i < data.length; i++) {
         const t = i / sampleRate;
-        const noteIndex = Math.floor(t * 8);
-        const f = 220 * Math.pow(2, ((noteIndex * 3) % 12) / 12);
-        const env = Math.exp(-(t % 0.125) * 20);
-        data[i] = Math.sin(2 * Math.PI * f * t) * env * 0.4;
+        const env = Math.min(1, t / 0.02) * Math.exp(-t * 1.6);
+        let sample = 0;
+        for (const f of chord) {
+          sample += Math.sin(2 * Math.PI * f * t) + 0.4 * Math.sin(2 * Math.PI * f * 2 * t);
+        }
+        data[i] = (sample / chord.length) * env * 0.4;
       }
       return buffer;
-    } else if (assetId.includes('beatloop')) {
-      const duration = 1.846;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    } else if (lowerId.includes('seethiscoat')) {
+      // See This Coat: Crisp vocal stab with tape saturation
+      const duration = 0.65;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
       const data = buffer.getChannelData(0);
-      const beatLen = 60 / 130;
+      const baseFreq = 261.63; // C4
+      
       for (let i = 0; i < data.length; i++) {
         const t = i / sampleRate;
-        let val = 0;
-        
-        const tKick = t % beatLen;
-        const kickEnv = Math.exp(-tKick * 20);
-        const kickFreq = 150 * Math.exp(-tKick * 30) + 40;
-        val += Math.sin(2 * Math.PI * kickFreq * tKick) * kickEnv * 0.6;
-        
-        const beatNum = Math.floor(t / beatLen);
-        if (beatNum === 1 || beatNum === 3) {
-          const tSnare = t % beatLen;
-          const snareEnv = Math.exp(-tSnare * 12);
-          const snareNoise = (Math.random() * 2 - 1) * snareEnv * 0.3;
-          const snareTone = Math.sin(2 * Math.PI * 180 * tSnare) * Math.exp(-tSnare * 30) * 0.2;
-          val += snareNoise + snareTone;
+        const env = Math.min(1, t / 0.015) * Math.exp(-t * 6);
+        const wave = Math.sin(2 * Math.PI * baseFreq * t) + 
+                     0.5 * Math.sin(2 * Math.PI * baseFreq * 1.5 * t) +
+                     0.3 * Math.sin(2 * Math.PI * 880 * t);
+        data[i] = Math.tanh(wave * 1.8) * env * 0.35;
+      }
+      return buffer;
+    } else if (lowerId.includes('lordfast')) {
+      // Lord Fast: Upbeat rapid gospel arpeggios
+      const duration = 1.846;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+      const data = buffer.getChannelData(0);
+      const scale = [220, 261.63, 293.66, 329.63, 392, 440];
+      
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        const step = Math.floor(t * 8) % scale.length;
+        const noteFreq = scale[step];
+        const stepTime = t % 0.125;
+        const env = Math.exp(-stepTime * 22);
+        const wave = Math.sin(2 * Math.PI * noteFreq * t) + 0.3 * Math.sin(2 * Math.PI * noteFreq * 2 * t);
+        data[i] = wave * env * 0.35;
+      }
+      return buffer;
+    } else if (lowerId.includes('beatloop')) {
+      // Beat Loop: 130 BPM Punchy Hip-Hop / Trap Drum Groove (4 beats = 1.84615s)
+      const duration = 1.84615;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+      const data = buffer.getChannelData(0);
+      const beatLen = 60 / 130; // ~0.4615s
+      const sixteenth = beatLen / 4;
+      
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        let mix = 0;
+
+        // 1. Kick on Beat 1, Beat 2.5, Beat 3.75
+        const kickHits = [0, beatLen * 1.5, beatLen * 2.75];
+        for (const hit of kickHits) {
+          const tKick = t - hit;
+          if (tKick >= 0 && tKick < 0.35) {
+            const kickPitch = 130 * Math.exp(-tKick * 38) + 42;
+            const kickEnv = Math.exp(-tKick * 12);
+            mix += Math.sin(2 * Math.PI * kickPitch * tKick) * kickEnv * 0.75;
+          }
         }
 
-        const tHat = (t + beatLen/2) % beatLen;
-        const hatEnv = Math.exp(-tHat * 45);
-        const hatVal = (Math.random() * 2 - 1) * hatEnv * 0.15;
-        val += hatVal;
-        
-        data[i] = val * 0.5;
+        // 2. Snare / Clap on Beat 2 and Beat 4
+        const snareHits = [beatLen * 1, beatLen * 3];
+        for (const hit of snareHits) {
+          const tSnare = t - hit;
+          if (tSnare >= 0 && tSnare < 0.28) {
+            const snareEnv = Math.exp(-tSnare * 16);
+            const noise = (Math.random() * 2 - 1) * snareEnv * 0.45;
+            const body = Math.sin(2 * Math.PI * 185 * tSnare) * Math.exp(-tSnare * 30) * 0.3;
+            mix += noise + body;
+          }
+        }
+
+        // 3. Rolling Hi-Hats (16th notes with accent and sizzle)
+        const hatIndex = Math.floor(t / sixteenth);
+        const tHat = t - hatIndex * sixteenth;
+        if (tHat >= 0 && tHat < 0.08) {
+          const isAccent = hatIndex % 4 === 2;
+          const hatEnv = Math.exp(-tHat * (isAccent ? 50 : 75));
+          const hatNoise = (Math.random() * 2 - 1) * hatEnv * (isAccent ? 0.22 : 0.14);
+          mix += hatNoise;
+        }
+
+        // Master soft-clip for analog punch
+        data[i] = Math.tanh(mix * 1.2) * 0.55;
       }
       return buffer;
-    } else if (assetId.includes('cameraclick')) {
-      const duration = 0.15;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+    } else if (lowerId.includes('intro')) {
+      // Intro: Mike Dean style soaring analog synth lead
+      const duration = 2.8;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
       const data = buffer.getChannelData(0);
+      const baseFreq = 110; // A2
+      
       for (let i = 0; i < data.length; i++) {
         const t = i / sampleRate;
-        const env = Math.exp(-t * 30) * (t < 0.05 ? 1 : Math.exp(-(t-0.05) * 50));
-        data[i] = (Math.random() * 2 - 1) * env * 0.3;
+        const env = Math.min(1, t / 0.15) * (t < 2.0 ? 1 : Math.max(0, 1 - (t - 2.0) / 0.8));
+        const glide = baseFreq * (1 + 0.5 * Math.exp(-t * 2));
+        
+        // Multi-saw detuned oscillators
+        const saw1 = 2 * ((glide * t) % 1) - 1;
+        const saw2 = 2 * (((glide * 1.008) * t) % 1) - 1;
+        const saw3 = 2 * (((glide * 0.992) * t) % 1) - 1;
+        const sub = Math.sin(2 * Math.PI * (glide / 2) * t) * 0.5;
+
+        data[i] = ((saw1 + saw2 + saw3) * 0.25 + sub) * env * 0.35;
+      }
+      return buffer;
+    } else if (lowerId.includes('guitar')) {
+      // Guitar: Resonant Karplus-Strong string chord
+      const duration = 1.8;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+      const data = buffer.getChannelData(0);
+      const chord = [164.81, 220.00, 261.63, 329.63];
+      
+      for (const freq of chord) {
+        const L = Math.round(sampleRate / freq);
+        const ring = new Float32Array(L);
+        for (let k = 0; k < L; k++) ring[k] = Math.random() * 2 - 1;
+        
+        let p = 0;
+        for (let i = 0; i < data.length; i++) {
+          const val = ring[p];
+          data[i] += val * (1 / chord.length) * 0.35;
+          const next = (p + 1) % L;
+          ring[p] = (val + ring[next]) * 0.5 * 0.993;
+          p = next;
+        }
+      }
+      return buffer;
+    } else if (lowerId.includes('lordlong')) {
+      // Lord Long: Sustained soul chords with warm organ vibrato
+      const duration = 3.2;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+      const data = buffer.getChannelData(0);
+      const chord = [130.81, 164.81, 196.00, 246.94]; // Cmaj7
+      
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        const env = Math.min(1, t / 0.1) * (t < 2.2 ? 1 : Math.max(0, 1 - (t - 2.2) / 1.0));
+        const vibrato = Math.sin(2 * Math.PI * 5.0 * t) * 0.15;
+        let sample = 0;
+        for (const f of chord) {
+          sample += Math.sin(2 * Math.PI * f * t) + 0.35 * Math.sin(2 * Math.PI * f * 2 * t);
+        }
+        data[i] = (sample / chord.length) * (1 + vibrato) * env * 0.38;
+      }
+      return buffer;
+    } else if (lowerId.includes('cameraclick')) {
+      // Camera click: Mechanical shutter click + mirror slap
+      const duration = 0.22;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+      const data = buffer.getChannelData(0);
+      
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        // First click (shutter open) at t = 0
+        const click1 = (Math.random() * 2 - 1) * Math.exp(-t * 90);
+        // Second click (shutter close) at t = 0.05
+        const t2 = t - 0.05;
+        const click2 = t2 > 0 ? (Math.random() * 2 - 1) * Math.exp(-t2 * 110) * 1.2 : 0;
+        // Mechanical winding hum at t > 0.08
+        const t3 = t - 0.08;
+        const motor = t3 > 0 ? Math.sin(2 * Math.PI * 340 * t3) * Math.exp(-t3 * 30) * 0.15 : 0;
+        
+        data[i] = (click1 + click2 + motor) * 0.45;
+      }
+      return buffer;
+    } else if (lowerId.includes('info')) {
+      // Info: Crystal chime synth tone
+      const duration = 1.0;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
+      const data = buffer.getChannelData(0);
+      const freqs = [523.25, 659.25, 783.99, 1046.50]; // Cmaj arpeggio chime
+      
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        let mix = 0;
+        for (let idx = 0; idx < freqs.length; idx++) {
+          const noteTime = t - idx * 0.05;
+          if (noteTime > 0) {
+            mix += Math.sin(2 * Math.PI * freqs[idx] * noteTime) * Math.exp(-noteTime * 4.5);
+          }
+        }
+        data[i] = mix * 0.25;
       }
       return buffer;
     } else {
-      const duration = 0.2;
-      const buffer = this.context.createBuffer(1, sampleRate * duration, sampleRate);
+      // Default / 808 Sub Bass Drop
+      const duration = 1.2;
+      const buffer = this.context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < data.length; i++) {
         const t = i / sampleRate;
-        const env = Math.exp(-t * 10);
-        data[i] = Math.sin(2 * Math.PI * 880 * t) * env * 0.3;
+        const env = Math.exp(-t * 2.5);
+        const pitchGlide = 90 * Math.exp(-t * 6) + 40;
+        const wave = Math.sin(2 * Math.PI * pitchGlide * t);
+        data[i] = Math.tanh(wave * 1.5) * env * 0.5;
       }
       return buffer;
     }
@@ -245,12 +390,15 @@ class AudioEngine {
     padId: string;
     assetId: string;
     volume: number;
+    pan?: number;
+    tune?: number;
+    cutoff?: number;
     loop: boolean;
     exclusive: boolean;
     fadeIn?: number;
     offset?: number;
   }): Promise<string | null> {
-    const { padId, assetId, volume, loop, exclusive, fadeIn = 0, offset = 0 } = options;
+    const { padId, assetId, volume, pan = 0, tune = 0, cutoff = 20000, loop, exclusive, fadeIn = 0, offset = 0 } = options;
     let buffer = this.bufferCache.get(assetId);
     if (!buffer) {
       buffer = this.synthesizeDefaultSound(assetId);
@@ -270,8 +418,35 @@ class AudioEngine {
     const gainNode = ctx.createGain();
     source.buffer = buffer;
     source.loop = loop;
+
+    // Apply pitch tuning in semitones (100 cents per semitone)
+    if (tune !== 0 && source.detune) {
+      source.detune.value = tune * 100;
+    }
+
     gainNode.gain.value = fadeIn > 0 ? 0 : volume;
-    source.connect(gainNode);
+
+    // Connect node chain: Source -> Filter (optional) -> Pan (optional) -> Gain -> Master
+    let lastNode: AudioNode = source;
+
+    // Lowpass filter if cutoff is modified
+    if (cutoff && cutoff < 19500) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = Math.max(20, Math.min(20000, cutoff));
+      lastNode.connect(filter);
+      lastNode = filter;
+    }
+
+    // Stereo Panner
+    if (pan !== 0 && 'createStereoPanner' in ctx) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = clamp(pan, -1, 1);
+      lastNode.connect(panner);
+      lastNode = panner;
+    }
+
+    lastNode.connect(gainNode);
     gainNode.connect(this.masterGain!);
 
     const instanceId = crypto.randomUUID();

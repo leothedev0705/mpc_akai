@@ -85,8 +85,11 @@ export function createDefaultProject(name = 'Untitled Project'): Project {
     createdAt: now,
     updatedAt: now,
     masterVolume: 0.85,
+    bpm: 130,
+    swing: 54,
     activeBankId: 'A',
     banks: BANK_IDS.map(createDefaultBank),
+    sequences: [],
     libraryAssetIds: [],
   };
 }

@@ -6,6 +6,8 @@ import { MpcConsole } from '@/components/layout/MpcConsole';
 import { WaveformDisplay } from '@/components/waveform/WaveformDisplay';
 import { LoadProjectModal } from '@/features/projects/LoadProjectModal';
 import { SettingsModal } from '@/features/settings/SettingsModal';
+import { InfoModal } from '@/features/settings/InfoModal';
+import { SampleRecorderModal } from '@/features/sampler/SampleRecorderModal';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
 
@@ -49,6 +51,8 @@ export function StudioPage() {
       </div>
       <LoadProjectModal />
       <SettingsModal />
+      <InfoModal />
+      <SampleRecorderModal />
     </>
   );
 }
