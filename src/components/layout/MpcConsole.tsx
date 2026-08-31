@@ -30,6 +30,17 @@ export function MpcConsole() {
   const stopSequencer = useProjectStore((s) => s.stopSequencer);
   const toggleStep = useProjectStore((s) => s.toggleStep);
 
+  // Overdub / REC
+  const isRecording = useProjectStore((s) => s.isRecording);
+  const startOverdubRecord = useProjectStore((s) => s.startOverdubRecord);
+  const stopOverdubRecord = useProjectStore((s) => s.stopOverdubRecord);
+
+  // Metronome & Quantize
+  const toggleMetronome = useProjectStore((s) => s.toggleMetronome);
+  const setQuantize = useProjectStore((s) => s.setQuantize);
+  const metronomeOn = project.metronomeOn ?? false;
+  const quantize = project.quantize ?? '1/16';
+
   const stopAll = useProjectStore((s) => s.stopAll);
   const triggerPad = useProjectStore((s) => s.triggerPad);
   const updatePad = useProjectStore((s) => s.updatePad);
@@ -47,8 +58,8 @@ export function MpcConsole() {
   const prevAngleRef = useRef(0);
 
   // Playback states
-  const [isOverdubbing, setIsOverdubbing] = useState(false);
   const [activeFButton, setActiveFButton] = useState<number | null>(null);
+
 
   // Locate the active pad & asset details for the LCD Screen
   const bank = getActiveBank(project);
@@ -268,18 +279,28 @@ export function MpcConsole() {
     }
   };
 
-  const handleTransportClick = (type: 'rec' | 'overdub' | 'stop' | 'play' | 'playstart') => {
+  const handleTransportClick = (type: 'rec' | 'overdub' | 'stop' | 'play' | 'playstart' | 'click') => {
     if (type === 'stop') {
       stopAll();
       stopSequencer();
-      setIsOverdubbing(false);
+      stopOverdubRecord();
     } else if (type === 'play' || type === 'playstart') {
-      startSequencer();
+      if (isRecording) {
+        // Already in overdub — stop overdub but keep playing
+        stopOverdubRecord();
+        startSequencer();
+      } else {
+        startSequencer();
+      }
     } else if (type === 'rec') {
-      setSampleRecordModalOpen(true);
+      // REC arms overdub recording
+      startOverdubRecord();
     } else if (type === 'overdub') {
-      setIsOverdubbing(prev => !prev);
-      startSequencer();
+      if (isRecording) {
+        stopOverdubRecord();
+      } else {
+        startOverdubRecord();
+      }
     }
   };
 
@@ -289,6 +310,7 @@ export function MpcConsole() {
     if (sliderTarget === 'VOLUME') return activePad.volume;
     if (sliderTarget === 'TUNE') return ((activePad.tune ?? 0) + 12) / 24; // 0 to 1
     if (sliderTarget === 'FILTER') return (activePad.cutoff ?? 20000) / 20000;
+    if (sliderTarget === 'REVERB') return 0;
     return masterVolume;
   }, [activePad, sliderTarget, masterVolume]);
 
@@ -302,6 +324,11 @@ export function MpcConsole() {
     } else if (sliderTarget === 'FILTER' && activePad) {
       const cutoffHz = Math.round(Math.max(200, normalizedVal * 20000));
       updatePad(activePad.id, { cutoff: cutoffHz });
+    } else if (sliderTarget === 'REVERB') {
+      // Dynamic reverb send
+      import('@/services/audioEngine').then(({ audioEngine }) => {
+        audioEngine.setReverbLevel(normalizedVal);
+      });
     }
   };
 
@@ -539,8 +566,8 @@ export function MpcConsole() {
             {/* Column 5: Note Variation Slider (Volume / Tune / Filter) */}
             <div className="col-span-5 sm:col-span-3 flex flex-col items-center justify-between h-full py-1 px-1.5 sm:py-1.5 sm:px-2 bg-black/20 rounded-xl border border-white/5 shadow-inner min-h-[150px] sm:min-h-[175px]">
               {/* Slider Target Selector Buttons */}
-              <div className="flex gap-0.5 sm:gap-1 w-full justify-center">
-                {(['VOLUME', 'TUNE', 'FILTER'] as const).map((t) => (
+              <div className="flex gap-0.5 sm:gap-1 w-full justify-center flex-wrap">
+                {(['VOLUME', 'TUNE', 'FILTER', 'REVERB'] as const).map((t) => (
                   <button
                     key={t}
                     onClick={() => setSliderTarget(t)}
@@ -549,7 +576,7 @@ export function MpcConsole() {
                       sliderTarget === t ? "bg-red-600 text-white" : "bg-neutral-800 text-neutral-400 hover:text-white"
                     )}
                   >
-                    {t === 'VOLUME' ? 'VOL' : t === 'TUNE' ? 'TUNE' : 'FILT'}
+                    {t === 'VOLUME' ? 'VOL' : t === 'TUNE' ? 'TUNE' : t === 'FILTER' ? 'FILT' : 'VERB'}
                   </button>
                 ))}
               </div>
@@ -677,33 +704,63 @@ export function MpcConsole() {
           </div>
 
           {/* Bottom Left: Transport Keys Panel */}
-          <div className="flex gap-1.5 sm:gap-2.5 mt-4 sm:mt-5 border-t border-white/5 pt-2.5 sm:pt-3.5">
+          <div className="flex gap-1 sm:gap-1.5 mt-4 sm:mt-5 border-t border-white/5 pt-2.5 sm:pt-3.5 flex-wrap">
             {[
-              { type: 'rec', label: 'REC', isRed: true, led: false },
-              { type: 'overdub', label: 'OVER DUB', isRed: true, led: isOverdubbing },
+              { type: 'rec', label: 'REC', isRed: true, led: isRecording },
+              { type: 'overdub', label: 'OVER DUB', isRed: true, led: isRecording && isPlayingSequencer },
               { type: 'stop', label: 'STOP', isRed: false },
-              { type: 'play', label: 'PLAY', isRed: false, led: isPlayingSequencer },
-              { type: 'playstart', label: 'PLAY START', isRed: false }
+              { type: 'play', label: 'PLAY', isRed: false, led: isPlayingSequencer && !isRecording },
+              { type: 'playstart', label: 'PLAY START', isRed: false },
+              { type: 'click', label: 'CLICK', isRed: false, led: metronomeOn, isGreen: true },
             ].map((btn) => (
               <button
                 key={btn.type}
-                onClick={() => handleTransportClick(btn.type as any)}
+                onClick={() => {
+                  if (btn.type === 'click') {
+                    toggleMetronome();
+                  } else {
+                    handleTransportClick(btn.type as any);
+                  }
+                }}
                 className={cn(
-                  "flex-1 h-8 sm:h-9 rounded flex flex-col items-center justify-center border border-neutral-950 font-mono text-[8px] sm:text-[9px] font-bold shadow-md active:translate-y-[1px] cursor-pointer transition-all touch-manipulation",
+                  "flex-1 min-w-[50px] h-8 sm:h-9 rounded flex flex-col items-center justify-center border border-neutral-950 font-mono text-[7px] sm:text-[9px] font-bold shadow-md active:translate-y-[1px] cursor-pointer transition-all touch-manipulation",
                   btn.isRed
                     ? "bg-gradient-to-b from-red-600 to-red-800 text-white hover:brightness-110"
-                    : "bg-gradient-to-b from-[#3a3a3e] to-[#252528] text-neutral-200 hover:text-white hover:brightness-110"
+                    : (btn as any).isGreen
+                      ? cn("bg-gradient-to-b from-[#3a3a3e] to-[#252528] hover:brightness-110", metronomeOn ? "text-[#2EEB8B]" : "text-neutral-400")
+                      : "bg-gradient-to-b from-[#3a3a3e] to-[#252528] text-neutral-200 hover:text-white hover:brightness-110"
                 )}
               >
                 {btn.led !== undefined && (
                   <div
                     className={cn(
                       "w-1.5 h-1.5 rounded-full mb-0.5",
-                      btn.led ? (btn.isRed ? "bg-red-400 shadow-[0_0_6px_red]" : "bg-emerald-400 shadow-[0_0_6px_#10b981]") : "bg-neutral-800"
+                      btn.led
+                        ? (btn.isRed ? "bg-red-400 shadow-[0_0_6px_red] animate-pulse" : (btn as any).isGreen ? "bg-[#2EEB8B] shadow-[0_0_6px_#2EEB8B]" : "bg-emerald-400 shadow-[0_0_6px_#10b981]")
+                        : "bg-neutral-800"
                     )}
                   />
                 )}
                 <span>{btn.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Quantize row */}
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="text-[8px] text-neutral-500 font-mono">QUANTIZE</span>
+            {(['OFF', '1/32', '1/16', '1/8', '1/4'] as const).map((q) => (
+              <button
+                key={q}
+                onClick={() => setQuantize(q)}
+                className={cn(
+                  "text-[8px] px-1.5 py-0.5 rounded font-mono transition-all touch-manipulation",
+                  quantize === q
+                    ? "bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40"
+                    : "bg-white/5 text-neutral-500 hover:text-neutral-300"
+                )}
+              >
+                {q}
               </button>
             ))}
           </div>

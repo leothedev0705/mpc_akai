@@ -18,13 +18,17 @@ class AudioEngine {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
+  private reverbGain: GainNode | null = null;
+  private convolver: ConvolverNode | null = null;
   private bufferCache = new Map<string, AudioBuffer>();
+  private chopSliceCache = new Map<string, AudioBuffer[]>(); // assetId -> 16 slice buffers
   private activePlaybacks = new Map<string, PlaybackInstance>();
   private levelCallback: LevelCallback | null = null;
   private playbackEndCallback: PlaybackEndCallback | null = null;
   private rafId: number | null = null;
   private masterVolume = 0.85;
   private padLevels = new Map<string, number>();
+  private rollTimerId: ReturnType<typeof setInterval> | null = null;
 
   async ensureContext(): Promise<AudioContext> {
     if (!this.context) {
@@ -32,6 +36,15 @@ class AudioEngine {
       this.masterGain = this.context.createGain();
       this.analyser = this.context.createAnalyser();
       this.analyser.fftSize = 256;
+
+      // Reverb send chain
+      this.reverbGain = this.context.createGain();
+      this.reverbGain.gain.value = 0;
+      this.convolver = this.context.createConvolver();
+      this.convolver.buffer = this.createReverbImpulse(this.context, 1.5);
+      this.reverbGain.connect(this.convolver);
+      this.convolver.connect(this.masterGain!);
+
       this.masterGain.connect(this.analyser);
       this.analyser.connect(this.context.destination);
       this.masterGain.gain.value = this.masterVolume;
@@ -44,6 +57,144 @@ class AudioEngine {
 
     return this.context;
   }
+
+  private createReverbImpulse(ctx: AudioContext, duration: number): AudioBuffer {
+    const length = Math.floor(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+      }
+    }
+    return buffer;
+  }
+
+  setReverbLevel(level: number): void {
+    if (this.reverbGain) {
+      this.reverbGain.gain.value = clamp(level, 0, 1);
+    }
+  }
+
+  /** Slice an audio buffer into N equal parts and cache them under `${assetId}:chop` */
+  async chopToSlices(assetId: string, numSlices = 16): Promise<AudioBuffer[]> {
+    const buffer = this.bufferCache.get(assetId);
+    if (!buffer) return [];
+
+    const sliceLen = Math.floor(buffer.length / numSlices);
+    const slices: AudioBuffer[] = [];
+    const ctx = await this.ensureContext();
+
+    for (let i = 0; i < numSlices; i++) {
+      const start = i * sliceLen;
+      const end = i === numSlices - 1 ? buffer.length : start + sliceLen;
+      const sliceBuf = ctx.createBuffer(buffer.numberOfChannels, end - start, buffer.sampleRate);
+      for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        const srcData = buffer.getChannelData(ch).subarray(start, end);
+        sliceBuf.getChannelData(ch).set(srcData);
+      }
+      slices.push(sliceBuf);
+    }
+
+    this.chopSliceCache.set(assetId, slices);
+    return slices;
+  }
+
+  getChopSlice(assetId: string, sliceIndex: number): AudioBuffer | undefined {
+    return this.chopSliceCache.get(assetId)?.[sliceIndex];
+  }
+
+  hasChopSlices(assetId: string): boolean {
+    return this.chopSliceCache.has(assetId);
+  }
+
+  /** Play a single chop slice for a pad */
+  async playChopSlice(padId: string, assetId: string, sliceIndex: number, volume: number, chopGroupId?: string | null): Promise<void> {
+    const slice = this.getChopSlice(assetId, sliceIndex);
+    if (!slice) return;
+    const ctx = await this.ensureContext();
+
+    // Choke group: stop all pads in same chopGroup
+    if (chopGroupId) {
+      for (const instance of [...this.activePlaybacks.values()]) {
+        if ((instance as any).chopGroupId === chopGroupId) {
+          this.stopInstance(instance.id, 0.02);
+        }
+      }
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = slice;
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = volume;
+    source.connect(gainNode);
+    gainNode.connect(this.masterGain!);
+
+    const instanceId = crypto.randomUUID();
+    const instance: PlaybackInstance & { chopGroupId?: string | null } = {
+      id: instanceId,
+      padId,
+      source,
+      gainNode,
+      startedAt: ctx.currentTime,
+      offset: 0,
+      loop: false,
+      exclusiveGroup: chopGroupId ?? null,
+      chopGroupId: chopGroupId,
+    };
+
+    source.onended = () => {
+      this.activePlaybacks.delete(instanceId);
+      this.padLevels.set(padId, 0);
+      this.playbackEndCallback?.(instanceId, padId);
+    };
+
+    this.activePlaybacks.set(instanceId, instance);
+    source.start();
+  }
+
+  /** Play metronome tick — high tick on beat 1, low on 2-4 */
+  playMetronomeTick(isDownbeat: boolean): void {
+    if (!this.context || !this.masterGain) return;
+    const ctx = this.context;
+    const freq = isDownbeat ? 1000 : 800;
+    const duration = 0.03;
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    env.gain.setValueAtTime(0.4, ctx.currentTime);
+    env.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(env);
+    env.connect(this.masterGain);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  }
+
+  /** Start beat roll — repeatedly triggers a pad at subdivisions */
+  startRoll(
+    triggerFn: () => void,
+    bpm: number,
+    subdivision: '1/8' | '1/16' | '1/32' = '1/16'
+  ): void {
+    this.stopRoll();
+    const divisor = subdivision === '1/8' ? 2 : subdivision === '1/16' ? 4 : 8;
+    const intervalMs = (60 / bpm / divisor) * 1000;
+    triggerFn(); // trigger immediately
+    this.rollTimerId = setInterval(triggerFn, intervalMs);
+  }
+
+  stopRoll(): void {
+    if (this.rollTimerId !== null) {
+      clearInterval(this.rollTimerId);
+      this.rollTimerId = null;
+    }
+  }
+
+  isRolling(): boolean {
+    return this.rollTimerId !== null;
+  }
+
 
   getAnalyser(): AnalyserNode | null {
     return this.analyser;

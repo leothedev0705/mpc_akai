@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { AudioAsset, BankId, PadColor, PadConfig, Project } from '@/types';
+import type { AudioAsset, BankId, PadColor, PadConfig, Project, QuantizeValue } from '@/types';
 import {
   createDefaultProject,
   debounce,
@@ -23,11 +23,18 @@ interface ProjectState {
   isPaused: boolean;
 
   // Authentic MPC 2000XL Hardware Modes & Sequencer
-  mpcMode: 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS';
-  sliderTarget: 'VOLUME' | 'TUNE' | 'FILTER';
+  mpcMode: 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS' | 'CHOP';
+  sliderTarget: 'VOLUME' | 'TUNE' | 'FILTER' | 'REVERB';
   is16Levels: boolean;
   currentStep: number;
   isPlayingSequencer: boolean;
+
+  // Overdub recording
+  isRecording: boolean; // overdub armed + playing
+
+  // Chop mode
+  chopSourceAssetId: string | null;
+  chopSliceCount: number;
 
   init: () => Promise<void>;
   newProject: (name?: string) => void;
@@ -42,12 +49,21 @@ interface ProjectState {
   setMasterVolume: (volume: number) => void;
   setBpm: (bpm: number) => void;
   setSwing: (swing: number) => void;
-  setMpcMode: (mode: 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS') => void;
-  setSliderTarget: (target: 'VOLUME' | 'TUNE' | 'FILTER') => void;
+  setMpcMode: (mode: 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS' | 'CHOP') => void;
+  setSliderTarget: (target: 'VOLUME' | 'TUNE' | 'FILTER' | 'REVERB') => void;
   toggle16Levels: () => void;
   toggleStep: (padId: string, stepIndex: number) => void;
   startSequencer: () => void;
   stopSequencer: () => void;
+  // Overdub / live recording into sequencer
+  startOverdubRecord: () => void;
+  stopOverdubRecord: () => void;
+  stampPadHitToSequencer: (padId: string) => void; // call on each pad hit during overdub
+  // Metronome
+  toggleMetronome: () => void;
+  setQuantize: (q: QuantizeValue) => void;
+  // Chop workflow
+  chopToPads: (assetId: string, bankId?: BankId) => Promise<void>;
   uploadFiles: (files: FileList | File[]) => Promise<AudioAsset[]>;
   deleteAsset: (assetId: string) => Promise<void>;
   preloadAssets: () => Promise<void>;
@@ -85,6 +101,9 @@ export const useProjectStore = create<ProjectState>()(
     is16Levels: false,
     currentStep: 0,
     isPlayingSequencer: false,
+    isRecording: false,
+    chopSourceAssetId: null,
+    chopSliceCount: 16,
 
     setBpm: (bpm) => {
       set((s) => ({ project: { ...s.project, bpm: Math.max(40, Math.min(240, bpm)), updatedAt: Date.now() } }));
@@ -147,6 +166,15 @@ export const useProjectStore = create<ProjectState>()(
         const swingOffset = isOdd ? ((swing - 50) / 100) * sixteenthTime : 0;
         const stepDurationMs = (sixteenthTime + (isOdd ? swingOffset : -swingOffset)) * 1000;
 
+        // Metronome click on beats (every 4 steps = quarter note)
+        if (project.metronomeOn) {
+          const isDownbeat = currentStep === 0;
+          const isBeat = currentStep % 4 === 0;
+          if (isBeat) {
+            audioEngine.playMetronomeTick(isDownbeat);
+          }
+        }
+
         // Trigger any pads active on this step
         if (project.sequences) {
           for (const seq of project.sequences) {
@@ -170,7 +198,123 @@ export const useProjectStore = create<ProjectState>()(
         clearTimeout(seqTimerId);
         seqTimerId = null;
       }
-      set({ isPlayingSequencer: false, currentStep: 0 });
+      set({ isPlayingSequencer: false, currentStep: 0, isRecording: false });
+    },
+
+    startOverdubRecord: () => {
+      // Start sequencer if not running, arm recording
+      if (!get().isPlayingSequencer) {
+        get().startSequencer();
+      }
+      set({ isRecording: true });
+    },
+
+    stopOverdubRecord: () => {
+      set({ isRecording: false });
+    },
+
+    stampPadHitToSequencer: (padId: string) => {
+      const { currentStep, project } = get();
+      const quantize = project.quantize ?? '1/16';
+      if (quantize === 'OFF') return;
+
+      // Stamp the pad hit into the nearest step
+      set((s) => {
+        const sequences = [...(s.project.sequences || [])];
+        let seq = sequences.find((sq) => sq.padId === padId);
+        if (!seq) {
+          seq = { padId, steps: new Array(16).fill(false) };
+          sequences.push(seq);
+        }
+        const updatedSteps = [...seq.steps];
+        const snapStep = Math.min(15, Math.max(0, currentStep));
+        updatedSteps[snapStep] = true;
+        seq.steps = updatedSteps;
+        return { project: { ...s.project, sequences, updatedAt: Date.now() } };
+      });
+    },
+
+    toggleMetronome: () => {
+      set((s) => ({
+        project: {
+          ...s.project,
+          metronomeOn: !s.project.metronomeOn,
+          updatedAt: Date.now(),
+        },
+      }));
+    },
+
+    setQuantize: (q) => {
+      set((s) => ({
+        project: { ...s.project, quantize: q, updatedAt: Date.now() },
+      }));
+    },
+
+    chopToPads: async (assetId: string, bankId?: BankId) => {
+      await audioEngine.ensureContext();
+      const slices = await audioEngine.chopToSlices(assetId, 16);
+      if (!slices.length) return;
+
+      const targetBankId = bankId ?? get().project.activeBankId;
+      const asset = get().assets.find((a) => a.id === assetId);
+      const chopGroupId = `chop-${assetId}`;
+
+      // Cache each slice with a stable ID
+      for (let i = 0; i < slices.length; i++) {
+        const chopId = `${assetId}:chop:${i}`;
+        if (!audioEngine.hasBuffer(chopId)) {
+          // Copy slice to ArrayBuffer and decode into cache
+          const slice = slices[i];
+          const offline = new OfflineAudioContext(slice.numberOfChannels, slice.length, slice.sampleRate);
+          const src = offline.createBufferSource();
+          src.buffer = slice;
+          src.connect(offline.destination);
+          src.start();
+          const rendered = await offline.startRendering();
+          // Convert to ArrayBuffer via channel data
+          const totalLength = rendered.length * rendered.numberOfChannels * 2;
+          const ab = new ArrayBuffer(totalLength);
+          const view = new DataView(ab);
+          let offset = 0;
+          for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+            const data = rendered.getChannelData(ch);
+            for (let s = 0; s < data.length; s++) {
+              view.setInt16(offset, Math.max(-32768, Math.min(32767, data[s] * 32768)), true);
+              offset += 2;
+            }
+          }
+          // Directly store the AudioBuffer in the engine cache
+          await audioEngine.decodeAndCache(chopId, slice.getChannelData(0).buffer.slice(0)).catch(() => {
+            // If decodeAudioData fails on raw channel data, just store the rendered buffer directly
+            // We'll set it via the internal cache workaround
+          });
+          // Direct buffer injection
+          audioEngine['bufferCache']?.set(chopId, slice);
+        }
+      }
+
+      set((s) => ({
+        project: {
+          ...s.project,
+          banks: s.project.banks.map((bank) => {
+            if (bank.id !== targetBankId) return bank;
+            return {
+              ...bank,
+              pads: bank.pads.map((pad, idx) => {
+                const sliceName = asset ? `${asset.name} [${idx + 1}]` : `CHOP ${String(idx + 1).padStart(2, '0')}`;
+                return {
+                  ...pad,
+                  assetId: `${assetId}:chop:${idx}`,
+                  name: sliceName,
+                  exclusive: true,
+                  chopGroupId,
+                };
+              }),
+            };
+          }),
+          updatedAt: Date.now(),
+        },
+      }));
     },
 
     init: async () => {
@@ -223,6 +367,8 @@ export const useProjectStore = create<ProjectState>()(
         const project: Project = {
           ...defaultProj,
           ...parsed,
+          metronomeOn: parsed.metronomeOn ?? false,
+          quantize: parsed.quantize ?? '1/16',
           banks: (parsed.banks?.length ? parsed.banks : defaultProj.banks).map((bank) => ({
             ...bank,
             pads: bank.pads.map((pad, idx) => {
@@ -447,6 +593,11 @@ export const useProjectStore = create<ProjectState>()(
       });
 
       get().setPlayingPad(padId, true);
+
+      // Live overdub: stamp this pad hit into the sequencer grid
+      if (get().isRecording && get().isPlayingSequencer) {
+        get().stampPadHitToSequencer(padId);
+      }
     },
 
     stopPad: (padId) => {

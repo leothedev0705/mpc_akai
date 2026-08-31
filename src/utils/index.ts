@@ -62,6 +62,8 @@ export function createDefaultProject(name = 'Untitled Project'): Project {
     banks: BANK_IDS.map(createDefaultBank),
     sequences: [],
     libraryAssetIds: [],
+    metronomeOn: false,
+    quantize: '1/16',
   };
 }
 
@@ -89,7 +91,7 @@ export function getFileExtension(fileName: string): string {
 
 export function isSupportedAudioFile(fileName: string): boolean {
   const ext = getFileExtension(fileName);
-  return ['.wav', '.mp3', '.ogg', '.flac'].includes(ext);
+  return ['.wav', '.mp3', '.ogg', '.flac', '.aac', '.webm', '.m4a'].includes(ext);
 }
 
 export function inferAssetType(fileName: string): 'song' | 'sample' | 'stem' | 'loop' | 'sound-effect' {

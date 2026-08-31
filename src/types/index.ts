@@ -37,6 +37,11 @@ export interface PadConfig {
   solo: boolean;
   shortcut: string;
   assetId: string | null;
+  // Waveform trim points (normalized 0–1)
+  startOffset?: number;
+  endOffset?: number;
+  // Chop group — pads in the same chop group choke each other
+  chopGroupId?: string | null;
 }
 
 export interface Bank {
@@ -45,9 +50,11 @@ export interface Bank {
   pads: PadConfig[];
 }
 
-export type MPCMode = 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS';
+export type MPCMode = 'MAIN' | 'PAD_EDIT' | 'MIXER' | 'STEP_EDIT' | 'SAMPLER' | '16_LEVELS' | 'CHOP';
 
-export type SliderTarget = 'VOLUME' | 'TUNE' | 'FILTER';
+export type SliderTarget = 'VOLUME' | 'TUNE' | 'FILTER' | 'REVERB';
+
+export type QuantizeValue = 'OFF' | '1/32' | '1/16' | '1/8' | '1/4';
 
 export interface StepSequence {
   padId: string;
@@ -66,6 +73,9 @@ export interface Project {
   banks: Bank[];
   sequences: StepSequence[];
   libraryAssetIds: string[];
+  // New MPC workflow fields
+  metronomeOn: boolean;
+  quantize: QuantizeValue;
 }
 
 export type PlaybackState = 'idle' | 'playing' | 'paused';
@@ -108,6 +118,6 @@ export const PAD_COLORS: PadColor[] = [
   '#60A5FA',
 ];
 
-export const SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.ogg', '.flac'];
+export const SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.ogg', '.flac', '.aac', '.webm', '.m4a'];
 
 export const GRID_SIZE = 4;

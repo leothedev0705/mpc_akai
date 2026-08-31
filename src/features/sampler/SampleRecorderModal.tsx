@@ -173,6 +173,40 @@ export function SampleRecorderModal() {
     }
   };
 
+  const handleSaveAndChop = async () => {
+    if (!recordedBlob) return;
+
+    try {
+      const mimeType = recordedBlob.type || 'audio/webm';
+      const ext = mimeType.includes('mp4') ? '.mp4' : mimeType.includes('ogg') ? '.ogg' : '.webm';
+      const cleanName = sampleName.trim() || 'Recorded Sample';
+      const file = new File([recordedBlob], `${cleanName.toLowerCase().replace(/\s+/g, '_')}${ext}`, { type: mimeType });
+
+      const meta = await dbService.saveAsset(file);
+      const arrayBuffer = await recordedBlob.arrayBuffer();
+      const buffer = await audioEngine.decodeAndCache(meta.id, arrayBuffer);
+      meta.duration = buffer.duration;
+      await dbService.updateAssetMeta(meta);
+
+      useProjectStore.setState((s) => ({
+        assets: [meta, ...s.assets],
+        project: {
+          ...s.project,
+          libraryAssetIds: [meta.id, ...s.project.libraryAssetIds],
+          updatedAt: Date.now(),
+        },
+      }));
+
+      await useProjectStore.getState().chopToPads(meta.id);
+
+      toast.success('Chopped "' + cleanName + '" to 16 Pads!');
+      setOpen(false);
+    } catch (err) {
+      console.error('Failed to save & chop recorded sample:', err);
+      toast.error('Failed to chop recorded sample');
+    }
+  };
+
   return (
     <Modal open={open} onClose={() => setOpen(false)} title="MPC SAMPLER • LIVE RECORDING">
       <div className="space-y-5 text-neutral-300">
@@ -245,14 +279,23 @@ export function SampleRecorderModal() {
               </select>
             </div>
 
-            <Button
-              variant="accent"
-              onClick={handleSaveAndAssign}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Check size={16} />
-              SAVE & ASSIGN TO PAD
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="accent"
+                onClick={handleSaveAndAssign}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Check size={16} />
+                ASSIGN TO PAD
+              </Button>
+              <Button
+                variant="accent"
+                onClick={handleSaveAndChop}
+                className="bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] border border-[#00E5FF]/40 font-bold py-2.5 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                ✂ CHOP TO 16 PADS
+              </Button>
+            </div>
           </div>
         )}
 
