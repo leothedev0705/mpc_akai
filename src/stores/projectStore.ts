@@ -374,31 +374,56 @@ export const useProjectStore = create<ProjectState>()(
       const { project, is16Levels, selectedPadId } = get();
       const bank = getActiveBank(project);
 
+      const DEFAULT_PAD_SYNTHS = [
+        'default-synth-vocal1',
+        'default-synth-vocal2',
+        'default-synth-vocal3',
+        'default-synth-vocal4',
+        'default-synth-father',
+        'default-synth-badtous',
+        'default-synth-seethiscoat',
+        'default-synth-lordfast',
+        'default-synth-beatloop',
+        'default-synth-intro',
+        'default-synth-guitar',
+        'default-synth-lordlong',
+        'default-synth-808',
+        'default-synth-stop',
+        'default-synth-cameraclick',
+        'default-synth-info',
+      ];
+
+      const padIndex = bank.pads.findIndex((p) => p.id === padId);
+      const defaultSynthId = DEFAULT_PAD_SYNTHS[padIndex >= 0 ? padIndex % 16 : 0];
+
       // In 16-Levels mode, use the selected pad's sample and pitch-shift it
       let targetPad = bank.pads.find((p) => p.id === padId);
       if (is16Levels && selectedPadId) {
         const sourcePad = bank.pads.find((p) => p.id === selectedPadId);
-        if (sourcePad && sourcePad.assetId) {
+        if (sourcePad) {
+          const sourceAssetId = sourcePad.assetId || DEFAULT_PAD_SYNTHS[bank.pads.findIndex((p) => p.id === selectedPadId) % 16];
           targetPad = {
             ...sourcePad,
             id: padId,
+            assetId: sourceAssetId,
             tune: pitchShift || 0,
           };
         }
       }
 
-      if (!targetPad || !targetPad.assetId || targetPad.muted) return;
+      if (!targetPad || targetPad.muted) return;
+      const soundAssetId = targetPad.assetId || defaultSynthId;
 
-      // Handle Stop button pad
-      if (targetPad.assetId === 'default-synth-stop' || targetPad.name.toLowerCase() === 'stop') {
+      // Handle Stop button pad (Pad 14 by default)
+      if (soundAssetId === 'default-synth-stop' || targetPad.name.toLowerCase() === 'stop') {
         get().stopAll();
         get().setPlayingPad(padId, true);
         setTimeout(() => get().setPlayingPad(padId, false), 150);
         return;
       }
 
-      // Handle Info button pad
-      if (targetPad.assetId === 'default-synth-info' || targetPad.name.toLowerCase().includes('info')) {
+      // Handle Info button pad (Pad 16 by default)
+      if (soundAssetId === 'default-synth-info' || targetPad.name.toLowerCase().includes('info')) {
         useUIStore.getState().setInfoModalOpen(true);
       }
 
@@ -412,12 +437,12 @@ export const useProjectStore = create<ProjectState>()(
       const effectiveVolume = targetPad.volume * project.masterVolume;
       await audioEngine.playPad({
         padId,
-        assetId: targetPad.assetId,
+        assetId: soundAssetId,
         volume: effectiveVolume,
         pan: targetPad.pan ?? 0,
         tune: targetPad.tune ?? 0,
         cutoff: targetPad.cutoff ?? 20000,
-        loop: targetPad.loop,
+        loop: targetPad.loop || (soundAssetId === 'default-synth-beatloop'),
         exclusive: targetPad.exclusive,
       });
 

@@ -66,17 +66,26 @@ export function SampleRecorderModal() {
       streamRef.current = stream;
       audioChunksRef.current = [];
 
-      const mediaRecorder = new MediaRecorder(stream);
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : (MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : (MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : ''));
+      const options = mimeType ? { mimeType } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
+        if (e.data && e.data.size > 0) {
           audioChunksRef.current.push(e.data);
         }
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const actualMime = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: actualMime });
         setRecordedBlob(blob);
         const url = URL.createObjectURL(blob);
         setRecordedUrl(url);
@@ -109,7 +118,7 @@ export function SampleRecorderModal() {
     }
   };
 
-  const handlePlayPreview = () => {
+  const handlePlayPreview = async () => {
     if (!recordedUrl) return;
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
@@ -117,7 +126,12 @@ export function SampleRecorderModal() {
     const audio = new Audio(recordedUrl);
     previewAudioRef.current = audio;
     setIsPlayingPreview(true);
-    audio.play();
+    try {
+      await audio.play();
+    } catch (e) {
+      console.warn('Preview play error:', e);
+      setIsPlayingPreview(false);
+    }
     audio.onended = () => setIsPlayingPreview(false);
     audio.onerror = () => setIsPlayingPreview(false);
   };
@@ -126,8 +140,11 @@ export function SampleRecorderModal() {
     if (!recordedBlob || !targetPadId) return;
 
     try {
-      const file = new File([recordedBlob], (sampleName.trim() || 'Recorded Sample') + '.wav', {
-        type: 'audio/wav',
+      const mimeType = recordedBlob.type || 'audio/webm';
+      const ext = mimeType.includes('mp4') ? '.mp4' : mimeType.includes('ogg') ? '.ogg' : '.webm';
+      const cleanName = sampleName.trim() || 'Recorded Sample';
+      const file = new File([recordedBlob], cleanName + ext, {
+        type: mimeType,
       });
 
       const meta = await dbService.saveAsset(file);
@@ -146,11 +163,12 @@ export function SampleRecorderModal() {
       }));
 
       assignAssetToPad(targetPadId, meta.id);
-      updatePad(targetPadId, { name: sampleName.trim() || 'Recorded Sample' });
+      updatePad(targetPadId, { name: cleanName, assetId: meta.id });
 
-      toast.success('Assigned "' + sampleName + '" to Pad');
+      toast.success('Assigned "' + cleanName + '" to Pad');
       setOpen(false);
-    } catch {
+    } catch (err) {
+      console.error('Failed to save recorded sample:', err);
       toast.error('Failed to save recorded sample');
     }
   };
