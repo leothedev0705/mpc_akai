@@ -23,6 +23,13 @@ export interface AudioAsset {
   createdAt: number;
 }
 
+export interface CustomChop {
+  id: string;
+  startRatio: number; // 0–1
+  endRatio: number;   // 0–1
+  name?: string;
+}
+
 export interface PadConfig {
   id: string;
   name: string;
@@ -31,7 +38,7 @@ export interface PadConfig {
   pan?: number; // -1 (Left) to 1 (Right), 0 = Center
   tune?: number; // -12 to +12 semitones
   cutoff?: number; // 20 to 20000 Hz lowpass cutoff
-  loop: boolean;
+  loop?: boolean; // Deprecated - all pads one-shot
   exclusive: boolean;
   muted: boolean;
   solo: boolean;

@@ -591,8 +591,8 @@ export const useProjectStore = create<ProjectState>()(
         pan: targetPad.pan ?? 0,
         tune: targetPad.tune ?? 0,
         cutoff: targetPad.cutoff ?? 20000,
-        loop: targetPad.loop || (soundAssetId === 'default-synth-beatloop'),
-        exclusive: targetPad.exclusive,
+        startOffset: targetPad.startOffset ?? 0,
+        endOffset: targetPad.endOffset ?? 1,
       });
 
       get().setPlayingPad(padId, true);

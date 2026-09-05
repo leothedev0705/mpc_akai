@@ -558,12 +558,14 @@ class AudioEngine {
     pan?: number;
     tune?: number;
     cutoff?: number;
-    loop: boolean;
-    exclusive: boolean;
+    loop?: boolean;
+    exclusive?: boolean;
     fadeIn?: number;
     offset?: number;
+    startOffset?: number; // 0–1 ratio
+    endOffset?: number;   // 0–1 ratio
   }): Promise<string | null> {
-    const { padId, assetId, volume, pan = 0, tune = 0, cutoff = 20000, loop, exclusive, fadeIn = 0, offset = 0 } = options;
+    const { padId, assetId, volume, pan = 0, tune = 0, cutoff = 20000, fadeIn = 0, offset = 0, startOffset = 0, endOffset = 1 } = options;
     let buffer = this.bufferCache.get(assetId);
     if (!buffer) {
       buffer = this.synthesizeDefaultSound(assetId);
@@ -575,14 +577,13 @@ class AudioEngine {
 
     const ctx = await this.ensureContext();
 
-    if (exclusive) {
-      this.stopPadExclusive(padId);
-    }
+    // Monophonic Choke: Stop all currently active playbacks so previous pad turns off instantly
+    this.stopAll();
 
     const source = ctx.createBufferSource();
     const gainNode = ctx.createGain();
     source.buffer = buffer;
-    source.loop = loop;
+    source.loop = false; // No looping option
 
     // Apply pitch tuning in semitones (100 cents per semitone)
     if (tune !== 0 && source.detune) {
@@ -622,8 +623,8 @@ class AudioEngine {
       gainNode,
       startedAt: ctx.currentTime,
       offset,
-      loop,
-      exclusiveGroup: exclusive ? padId : null,
+      loop: false,
+      exclusiveGroup: padId,
     };
 
     source.onended = () => {
@@ -639,7 +640,13 @@ class AudioEngine {
       gainNode.gain.linearRampToValueAtTime(volume, ctx.currentTime + fadeIn);
     }
 
-    source.start(0, offset);
+    // Calculate trim slice offset and duration
+    const totalDuration = buffer.duration;
+    const startSec = Math.max(0, (startOffset ?? 0) * totalDuration);
+    const endSec = (endOffset && endOffset > (startOffset ?? 0)) ? endOffset * totalDuration : totalDuration;
+    const playDuration = Math.max(0.02, endSec - startSec);
+
+    source.start(0, startSec + offset, playDuration);
     this.activePlaybacks.set(instanceId, instance);
     return instanceId;
   }
@@ -677,13 +684,6 @@ class AudioEngine {
   stopPad(padId: string, fadeOut = 0): void {
     const instances = [...this.activePlaybacks.values()].filter((i) => i.padId === padId);
     instances.forEach((i) => this.stopInstance(i.id, fadeOut));
-  }
-
-  private stopPadExclusive(padId: string): void {
-    const instances = [...this.activePlaybacks.values()].filter(
-      (i) => i.exclusiveGroup === padId || i.padId === padId,
-    );
-    instances.forEach((i) => this.stopInstance(i.id));
   }
 
   stopAll(fadeOut = 0): void {

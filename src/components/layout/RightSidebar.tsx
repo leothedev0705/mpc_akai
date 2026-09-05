@@ -265,11 +265,6 @@ export function RightSidebar() {
             {/* Toggles */}
             <div className="space-y-3 pt-2 border-t border-white/6">
               <Toggle
-                label="Loop Mode"
-                checked={pad.loop}
-                onChange={(v) => updatePad(pad.id, { loop: v })}
-              />
-              <Toggle
                 label="Exclusive Cut Group"
                 checked={pad.exclusive}
                 onChange={(v) => updatePad(pad.id, { exclusive: v })}

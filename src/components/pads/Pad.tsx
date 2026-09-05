@@ -188,11 +188,6 @@ export const Pad = memo(function Pad({
       {/* Bottom Section: Mixer Indicators */}
       <div className="flex items-center justify-between w-full pointer-events-none z-10 text-[7px] sm:text-[8px] font-mono pt-1 border-t border-white/5">
         <div className="flex items-center gap-1">
-          {pad.loop && (
-            <span className="px-1 py-0.2 rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/40 font-bold">
-              LOOP
-            </span>
-          )}
           {pad.solo && (
             <span className="px-1 py-0.2 rounded bg-amber-950/80 text-amber-400 border border-amber-800/40 font-bold">
               S
