@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
+import { ZoomIn, ZoomOut, Scissors, Play, Square, BookmarkPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -18,6 +19,9 @@ export function WaveformDisplay() {
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isChopping, setIsChopping] = useState(false);
+
+  // Zoom level state (minPxPerSec: 0 = auto-fit, 100..1000 = zoomed in)
+  const [zoomLevel, setZoomLevel] = useState<number>(0);
 
   // Trim state (normalized 0–1)
   const [region, setRegion] = useState<RegionData>({ startRatio: 0, endRatio: 1 });
@@ -61,16 +65,17 @@ export function WaveformDisplay() {
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: '#262626',
+      waveColor: '#2b2b30',
       progressColor: '#00E5FF',
       cursorColor: '#00E5FF',
       cursorWidth: 2,
       barWidth: 2,
       barGap: 1,
       barRadius: 2,
-      height: 76,
+      height: 84,
       normalize: true,
       interact: true,
+      minPxPerSec: zoomLevel,
     });
 
     wavesurferRef.current = ws;
@@ -82,6 +87,13 @@ export function WaveformDisplay() {
       setIsReady(false);
     };
   }, []);
+
+  // Update zoom on WaveSurfer instance
+  useEffect(() => {
+    if (wavesurferRef.current && isReady) {
+      wavesurferRef.current.zoom(zoomLevel);
+    }
+  }, [zoomLevel, isReady]);
 
   useEffect(() => {
     const ws = wavesurferRef.current;
@@ -119,9 +131,9 @@ export function WaveformDisplay() {
         const ratio = Math.max(0, Math.min(1, (mv.clientX - rect.left) / rect.width));
         setRegion((prev) => {
           if (draggingRef.current === 'start') {
-            return { ...prev, startRatio: Math.min(ratio, prev.endRatio - 0.01) };
+            return { ...prev, startRatio: Math.min(ratio, prev.endRatio - 0.005) };
           } else {
-            return { ...prev, endRatio: Math.max(ratio, prev.startRatio + 0.01) };
+            return { ...prev, endRatio: Math.max(ratio, prev.startRatio + 0.005) };
           }
         });
       };
@@ -202,20 +214,115 @@ export function WaveformDisplay() {
     }
   }, [asset?.id, chopToPads]);
 
+  // Total duration & timing math
   const totalDurationSec = wavesurferRef.current?.getDuration() ?? asset?.duration ?? 0;
-  const startSec = (region.startRatio * totalDurationSec).toFixed(2);
-  const endSec = (region.endRatio * totalDurationSec).toFixed(2);
-  const sliceLenSec = Math.max(0, (region.endRatio - region.startRatio) * totalDurationSec).toFixed(2);
+  const startSecNum = region.startRatio * totalDurationSec;
+  const endSecNum = region.endRatio * totalDurationSec;
+  const sliceLenSecNum = Math.max(0, endSecNum - startSecNum);
+
+  // Nudge IN / OUT times by exact seconds (e.g. +/- 0.05s or 0.5s)
+  const handleNudgeTime = (target: 'start' | 'end', deltaSec: number) => {
+    if (totalDurationSec <= 0) return;
+    const deltaRatio = deltaSec / totalDurationSec;
+    setRegion((prev) => {
+      let newStart = prev.startRatio;
+      let newEnd = prev.endRatio;
+      if (target === 'start') {
+        newStart = Math.max(0, Math.min(prev.endRatio - 0.005, prev.startRatio + deltaRatio));
+      } else {
+        newEnd = Math.max(prev.startRatio + 0.005, Math.min(1, prev.endRatio + deltaRatio));
+      }
+      if (activePadId) {
+        updatePad(activePadId, { startOffset: newStart, endOffset: newEnd });
+      }
+      return { startRatio: newStart, endRatio: newEnd };
+    });
+  };
+
+  // Direct numeric input change for IN/OUT seconds
+  const handleSetExactTime = (target: 'start' | 'end', exactSec: number) => {
+    if (totalDurationSec <= 0) return;
+    const ratio = Math.max(0, Math.min(1, exactSec / totalDurationSec));
+    setRegion((prev) => {
+      const updated = target === 'start'
+        ? { ...prev, startRatio: Math.min(ratio, prev.endRatio - 0.005) }
+        : { ...prev, endRatio: Math.max(ratio, prev.startRatio + 0.005) };
+      if (activePadId) {
+        updatePad(activePadId, { startOffset: updated.startRatio, endOffset: updated.endRatio });
+      }
+      return updated;
+    });
+  };
 
   return (
-    <div className="px-3 py-2.5 border-t border-white/6 space-y-2.5 bg-black/30">
-      {/* Header */}
+    <div className="px-3 py-2.5 border-t border-white/6 space-y-2.5 bg-[#0a0a0d]">
+      {/* Top Bar: Title, Zoom Controls, Preset Buttons */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <span className="text-[10px] text-muted uppercase tracking-wider font-mono font-bold flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-          Sample Editor
-          {asset && <span className="text-text ml-1 normal-case text-xs font-sans font-semibold">{asset.name}</span>}
+          Waveform & Chop Editor
+          {asset && <span className="text-text ml-1 normal-case text-xs font-sans font-semibold text-white">{asset.name}</span>}
         </span>
+
+        {/* Zoom Control Group */}
+        {isReady && asset && (
+          <div className="flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded-lg border border-white/10 text-xs font-mono">
+            <span className="text-[9px] text-neutral-400 font-bold mr-1 hidden sm:inline">ZOOM:</span>
+            <button
+              onClick={() => setZoomLevel((z) => Math.max(0, z - 100))}
+              className="p-1 rounded bg-white/5 hover:bg-white/10 text-neutral-300 transition-colors touch-manipulation cursor-pointer"
+              title="Zoom Out"
+            >
+              <ZoomOut size={12} />
+            </button>
+            
+            {/* Zoom Presets */}
+            <button
+              onClick={() => setZoomLevel(0)}
+              className={cn(
+                "text-[9px] px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer",
+                zoomLevel === 0 ? "bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40" : "bg-white/5 text-neutral-400 hover:text-white"
+              )}
+            >
+              FIT
+            </button>
+            <button
+              onClick={() => setZoomLevel(200)}
+              className={cn(
+                "text-[9px] px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer",
+                zoomLevel === 200 ? "bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40" : "bg-white/5 text-neutral-400 hover:text-white"
+              )}
+            >
+              1.0s
+            </button>
+            <button
+              onClick={() => setZoomLevel(500)}
+              className={cn(
+                "text-[9px] px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer",
+                zoomLevel === 500 ? "bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40" : "bg-white/5 text-neutral-400 hover:text-white"
+              )}
+            >
+              0.5s
+            </button>
+            <button
+              onClick={() => setZoomLevel(1000)}
+              className={cn(
+                "text-[9px] px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer",
+                zoomLevel === 1000 ? "bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40" : "bg-white/5 text-neutral-400 hover:text-white"
+              )}
+            >
+              0.1s
+            </button>
+
+            <button
+              onClick={() => setZoomLevel((z) => Math.min(1000, z + 150))}
+              className="p-1 rounded bg-white/5 hover:bg-white/10 text-neutral-300 transition-colors touch-manipulation cursor-pointer"
+              title="Zoom In (Magnify small timeframes)"
+            >
+              <ZoomIn size={12} />
+            </button>
+          </div>
+        )}
 
         {/* Audition & Action controls */}
         <div className="flex items-center gap-1.5">
@@ -223,15 +330,15 @@ export function WaveformDisplay() {
             <>
               <button
                 onClick={handleAuditionSelection}
-                className="text-[10px] px-2 py-1 rounded bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] font-bold border border-[#00E5FF]/40 transition-colors touch-manipulation cursor-pointer flex items-center gap-1"
+                className="text-[10px] px-2.5 py-1 rounded bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] font-bold border border-[#00E5FF]/40 transition-colors touch-manipulation cursor-pointer flex items-center gap-1"
               >
-                ▶ AUDITION SELECTION
+                <Play size={11} /> AUDITION SLICE
               </button>
               <button
                 onClick={handleStopAudition}
                 className="text-[10px] px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-text font-bold transition-colors touch-manipulation cursor-pointer"
               >
-                ■ STOP
+                <Square size={11} /> STOP
               </button>
             </>
           )}
@@ -240,29 +347,30 @@ export function WaveformDisplay() {
               onClick={handleAutoChopAll}
               disabled={isChopping}
               className={cn(
-                'text-[10px] px-2 py-1 rounded font-bold transition-all touch-manipulation cursor-pointer',
+                'text-[10px] px-2 py-1 rounded font-bold transition-all touch-manipulation cursor-pointer flex items-center gap-1',
                 'bg-white/5 hover:bg-white/10 text-neutral-300 border border-white/10',
                 isChopping && 'opacity-50 cursor-not-allowed',
               )}
             >
-              {isChopping ? 'CHOPPING…' : '⚡ AUTO CHOP 16'}
+              <Scissors size={11} />
+              {isChopping ? 'CHOPPING…' : 'AUTO CHOP 16'}
             </button>
           )}
         </div>
       </div>
 
-      {/* Waveform Canvas with Draggable IN and OUT Handles */}
-      <div className="relative select-none">
+      {/* Waveform Container (Scrollable when zoomed in) */}
+      <div className="relative select-none overflow-x-auto rounded-lg border border-white/10 bg-[#08080a] p-1">
         <div
           ref={containerRef}
           className={cn(
-            'rounded-lg overflow-hidden bg-[#0a0a0d] border border-white/5 min-h-[76px]',
+            'min-h-[84px] relative',
             !asset && 'flex items-center justify-center',
           )}
         >
           {!asset && (
             <span className="text-xs text-muted/40 font-mono py-6">
-              Assign or load an audio file to view waveform & create custom chops
+              Assign or load an audio file to view waveform & edit chops
             </span>
           )}
         </div>
@@ -282,7 +390,7 @@ export function WaveformDisplay() {
 
             {/* Active Selection Highlight */}
             <div
-              className="absolute top-0 bottom-0 bg-[#00E5FF]/10 pointer-events-none border-t-2 border-b-2 border-[#00E5FF]/40"
+              className="absolute top-0 bottom-0 bg-[#00E5FF]/15 pointer-events-none border-t-2 border-b-2 border-[#00E5FF]"
               style={{
                 left: `${region.startRatio * 100}%`,
                 width: `${(region.endRatio - region.startRatio) * 100}%`,
@@ -291,63 +399,150 @@ export function WaveformDisplay() {
 
             {/* START (IN) Handle */}
             <div
-              className="absolute top-0 bottom-0 w-1.5 bg-[#2EEB8B] cursor-ew-resize z-20 group shadow-[0_0_8px_#2EEB8B]"
+              className="absolute top-0 bottom-0 w-2 bg-[#2EEB8B] cursor-ew-resize z-20 group shadow-[0_0_10px_#2EEB8B]"
               style={{ left: `${region.startRatio * 100}%` }}
               onMouseDown={handleRegionMouseDown('start')}
             >
               <div className="absolute top-0 left-0 -translate-x-1/2 text-[9px] text-black font-extrabold select-none whitespace-nowrap bg-[#2EEB8B] px-1 rounded-b shadow-md">
-                IN
+                IN: {startSecNum.toFixed(2)}s
               </div>
             </div>
 
             {/* END (OUT) Handle */}
             <div
-              className="absolute top-0 bottom-0 w-1.5 bg-[#FF5555] cursor-ew-resize z-20 group shadow-[0_0_8px_#FF5555]"
+              className="absolute top-0 bottom-0 w-2 bg-[#FF5555] cursor-ew-resize z-20 group shadow-[0_0_10px_#FF5555]"
               style={{ left: `${region.endRatio * 100}%` }}
               onMouseDown={handleRegionMouseDown('end')}
             >
               <div className="absolute top-0 left-0 -translate-x-1/2 text-[9px] text-white font-extrabold select-none whitespace-nowrap bg-[#FF5555] px-1 rounded-b shadow-md">
-                OUT
+                OUT: {endSecNum.toFixed(2)}s
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* Manual Chop Control Bar */}
+      {/* Fine-Tuning Controls for Small Timeframes (0.1s - 1.0s Nudging) */}
       {isReady && asset && (
-        <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-white/5">
-          {/* Slice timing readout */}
-          <div className="text-[10px] font-mono text-neutral-400 flex items-center gap-3">
-            <span>IN: <strong className="text-[#2EEB8B]">{startSec}s</strong></span>
-            <span>OUT: <strong className="text-[#FF5555]">{endSec}s</strong></span>
-            <span>LEN: <strong className="text-[#00E5FF]">{sliceLenSec}s</strong></span>
+        <div className="space-y-2 bg-black/40 p-2 rounded-lg border border-white/5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            {/* IN Marker Fine Nudge Controls */}
+            <div className="flex items-center gap-1 text-[10px] font-mono">
+              <span className="text-[#2EEB8B] font-bold">IN:</span>
+              <button
+                onClick={() => handleNudgeTime('start', -0.5)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="-0.5s"
+              >
+                -0.5s
+              </button>
+              <button
+                onClick={() => handleNudgeTime('start', -0.05)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="-0.05s"
+              >
+                -0.05s
+              </button>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max={endSecNum}
+                value={Number(startSecNum.toFixed(2))}
+                onChange={(e) => handleSetExactTime('start', parseFloat(e.target.value) || 0)}
+                className="w-16 bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 text-center text-[#2EEB8B] font-bold outline-none"
+              />
+              <button
+                onClick={() => handleNudgeTime('start', +0.05)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="+0.05s"
+              >
+                +0.05s
+              </button>
+              <button
+                onClick={() => handleNudgeTime('start', +0.5)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="+0.5s"
+              >
+                +0.5s
+              </button>
+            </div>
+
+            {/* Selection Duration Readout */}
+            <div className="px-2 py-0.5 bg-[#00E5FF]/10 border border-[#00E5FF]/30 rounded text-[11px] font-mono text-[#00E5FF] font-bold">
+              SLICE LENGTH: {sliceLenSecNum.toFixed(2)}s ({Math.round(sliceLenSecNum * 1000)}ms)
+            </div>
+
+            {/* OUT Marker Fine Nudge Controls */}
+            <div className="flex items-center gap-1 text-[10px] font-mono">
+              <span className="text-[#FF5555] font-bold">OUT:</span>
+              <button
+                onClick={() => handleNudgeTime('end', -0.5)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="-0.5s"
+              >
+                -0.5s
+              </button>
+              <button
+                onClick={() => handleNudgeTime('end', -0.05)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="-0.05s"
+              >
+                -0.05s
+              </button>
+              <input
+                type="number"
+                step="0.01"
+                min={startSecNum}
+                max={totalDurationSec}
+                value={Number(endSecNum.toFixed(2))}
+                onChange={(e) => handleSetExactTime('end', parseFloat(e.target.value) || 0)}
+                className="w-16 bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 text-center text-[#FF5555] font-bold outline-none"
+              />
+              <button
+                onClick={() => handleNudgeTime('end', +0.05)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="+0.05s"
+              >
+                +0.05s
+              </button>
+              <button
+                onClick={() => handleNudgeTime('end', +0.5)}
+                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-neutral-300 cursor-pointer"
+                title="+0.5s"
+              >
+                +0.5s
+              </button>
+            </div>
           </div>
 
-          {/* Manual Chop Assignment Bar */}
-          <div className="flex items-center gap-2">
+          {/* Target Pad Assignment Bar */}
+          <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-white/5">
             <span className="text-[10px] font-mono text-neutral-400">ASSIGN SLICE TO:</span>
-            <select
-              value={targetPadId}
-              onChange={(e) => {
-                setTargetPadId(e.target.value);
-                selectPad(e.target.value);
-              }}
-              className="bg-neutral-900 border border-neutral-700 text-xs font-mono text-white rounded px-2 py-1 outline-none focus:border-[#00E5FF]"
-            >
-              {bank.pads.map((p, i) => (
-                <option key={p.id} value={p.id}>
-                  Pad {String(i + 1).padStart(2, '0')}: {p.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={targetPadId}
+                onChange={(e) => {
+                  setTargetPadId(e.target.value);
+                  selectPad(e.target.value);
+                }}
+                className="bg-neutral-900 border border-neutral-700 text-xs font-mono text-white rounded px-2.5 py-1 outline-none focus:border-[#00E5FF]"
+              >
+                {bank.pads.map((p, i) => (
+                  <option key={p.id} value={p.id}>
+                    Pad {String(i + 1).padStart(2, '0')}: {p.name}
+                  </option>
+                ))}
+              </select>
 
-            <button
-              onClick={handleAssignSliceToPad}
-              className="text-[11px] px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-md touch-manipulation cursor-pointer flex items-center gap-1"
-            >
-              📌 ASSIGN SLICE TO PAD
-            </button>
+              <button
+                onClick={handleAssignSliceToPad}
+                className="text-[11px] px-3.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-md touch-manipulation cursor-pointer flex items-center gap-1.5"
+              >
+                <BookmarkPlus size={13} />
+                📌 ASSIGN SLICE TO PAD
+              </button>
+            </div>
           </div>
         </div>
       )}
