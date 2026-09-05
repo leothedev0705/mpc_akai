@@ -157,22 +157,34 @@ export function WaveformDisplay() {
     [activePadId, updatePad],
   );
 
-  const handleAuditionSelection = useCallback(() => {
+  const [isAuditioning, setIsAuditioning] = useState(false);
+
+  const handleAuditionSelection = useCallback(async () => {
     if (!asset) return;
-    const ws = wavesurferRef.current;
-    if (ws && isReady) {
-      const duration = ws.getDuration();
-      ws.setTime(region.startRatio * duration);
-      ws.play();
-      // Stop at OUT marker
-      const playDurationMs = (region.endRatio - region.startRatio) * duration * 1000;
-      setTimeout(() => {
-        ws.pause();
-      }, Math.max(50, playDurationMs));
-    }
-  }, [asset, isReady, region.startRatio, region.endRatio]);
+    audioEngine.stopAll();
+    wavesurferRef.current?.pause();
+    setIsAuditioning(true);
+
+    // Play strictly the region between startRatio (IN) and endRatio (OUT) via Web Audio API engine
+    await audioEngine.playPad({
+      padId: activePadId || 'audition-temp',
+      assetId: asset.id,
+      volume: project.masterVolume,
+      startOffset: region.startRatio,
+      endOffset: region.endRatio,
+    });
+
+    const buffer = audioEngine.getBuffer(asset.id);
+    const totalDuration = buffer?.duration ?? asset.duration ?? 1;
+    const sliceLenMs = Math.max(50, (region.endRatio - region.startRatio) * totalDuration * 1000);
+
+    setTimeout(() => {
+      setIsAuditioning(false);
+    }, sliceLenMs);
+  }, [asset, activePadId, project.masterVolume, region.startRatio, region.endRatio]);
 
   const handleStopAudition = useCallback(() => {
+    setIsAuditioning(false);
     wavesurferRef.current?.pause();
     audioEngine.stopAll();
   }, []);
@@ -330,9 +342,14 @@ export function WaveformDisplay() {
             <>
               <button
                 onClick={handleAuditionSelection}
-                className="text-[10px] px-2.5 py-1 rounded bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] font-bold border border-[#00E5FF]/40 transition-colors touch-manipulation cursor-pointer flex items-center gap-1"
+                className={cn(
+                  "text-[10px] px-2.5 py-1 rounded font-bold border transition-colors touch-manipulation cursor-pointer flex items-center gap-1",
+                  isAuditioning
+                    ? "bg-[#2EEB8B]/30 text-[#2EEB8B] border-[#2EEB8B]/60 animate-pulse"
+                    : "bg-[#00E5FF]/20 hover:bg-[#00E5FF]/30 text-[#00E5FF] border-[#00E5FF]/40"
+                )}
               >
-                <Play size={11} /> AUDITION SLICE
+                <Play size={11} /> {isAuditioning ? 'PLAYING SLICE...' : 'AUDITION SLICE'}
               </button>
               <button
                 onClick={handleStopAudition}
